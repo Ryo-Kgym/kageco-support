@@ -5,7 +5,7 @@ import { APP_NAME } from "@/lib/app-name";
 import { getChartAccountItems } from "@/lib/chart-account-items";
 import { calculateForecast, FORECAST_YEAR } from "@/lib/forecast";
 import { canUseAccessToken, loadForecast } from "@/lib/forecast-store";
-import { freeeSettings, localFreeeCallbackUrl } from "@/lib/freee-settings";
+import { freeeConfiguration } from "@/lib/freee-settings";
 import { authConfigured, currentSession, getSessionTokens } from "@/lib/security";
 
 export const maxDuration = 120;
@@ -45,25 +45,37 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
   const { notice } = await searchParams;
   const message = typeof notice === "string" && Object.hasOwn(notices, notice) ? notices[notice] : undefined;
   const session = await currentSession();
-  const configured = Boolean(freeeSettings()) && authConfigured();
-  const localSetup = Boolean(localFreeeCallbackUrl());
+  const { settings, issues } = freeeConfiguration();
+  const sessionConfigured = authConfigured();
+  const configured = Boolean(settings) && sessionConfigured;
   if (!session) {
+    const localIssues = process.env.NODE_ENV === "development"
+      ? [...issues, ...(sessionConfigured ? [] : ["SESSION_SECRET"])]
+      : [];
     return (
       <main className="dashboard-login">
-        <section className="dashboard-panel">
+        <section className="dashboard-panel login-panel" aria-labelledby="login-heading">
           <header className="panel-heading">
-            <h1>{APP_NAME}</h1>
-            {configured && <p>freeeで事業所を選んでログインします。</p>}
-            {!configured && localSetup && <p>freeeでログインするには、初期設定が必要です。</p>}
+            <h1 id="login-heading">{APP_NAME}</h1>
+            <p>freeeアカウントでログインし、試算に使う事業所を選びます。</p>
           </header>
-          {message && <p role="status">{message}</p>}
-          {configured ? (
-            <form action={startFreee}>
-              <button className="dashboard-button" type="submit">freeeでログイン</button>
-            </form>
-          ) : localSetup ? (
-            <a className="dashboard-button secondary" href="/freee/setup">freeeログインの設定方法を見る</a>
-          ) : <p>freeeログインの設定を準備中です。</p>}
+          {message && <p className="dashboard-notice" role="status">{message}</p>}
+          <form action={startFreee}>
+            <button className="dashboard-button" type="submit" disabled={!configured} aria-describedby={configured ? undefined : "login-unavailable"}>
+              freeeでログイン
+            </button>
+          </form>
+          {!configured && (
+            <div className="login-configuration" id="login-unavailable">
+              <strong>freeeログインを開始できません</strong>
+              {localIssues.length > 0 ? (
+                <>
+                  <p><code>.env.local</code> で次の設定を確認してください。</p>
+                  <ul>{localIssues.map((key) => <li key={key}><code>{key}</code></li>)}</ul>
+                </>
+              ) : <p>この環境のログイン設定が完了していません。</p>}
+            </div>
+          )}
         </section>
       </main>
     );
@@ -93,7 +105,6 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
         connected: data.connected,
         canSync: data.connected && tokens !== null && notice !== "sync-reconnect" &&
           (configured || data.canSyncWithoutRefresh || canUseAccessToken(tokens)),
-        localSetup,
         companyName: data.companyName,
         syncedAt: data.syncedAt,
         accountItemsNeedSync: data.actuals.some((row) => row.sales !== null && row.expenses !== null && !row.accountItems),

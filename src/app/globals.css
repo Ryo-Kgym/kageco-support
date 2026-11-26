@@ -1111,14 +1111,48 @@ a {
   width: min(100%, 420px);
 }
 
-.freee-callback-address {
-  margin: 16px 0;
-  font-size: .875rem;
+.login-panel {
+  display: grid;
+  gap: 16px;
 }
 
-.freee-callback-address dd {
-  margin: 4px 0 0;
+.login-panel .panel-heading,
+.login-panel h1 {
+  margin: 0;
+}
+
+.login-panel h1 {
+  font-size: clamp(1.35rem, 4.5vw, 1.65rem);
+}
+
+.login-panel .dashboard-button {
+  width: 100%;
+}
+
+.login-panel .dashboard-button:disabled {
+  border-color: var(--line);
+  background: var(--canvas);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.login-configuration {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--secondary);
+  font-size: .875rem;
   overflow-wrap: anywhere;
+}
+
+.login-configuration p {
+  margin: 4px 0 0;
+}
+
+.login-configuration ul {
+  margin: 6px 0 0;
+  padding-inline-start: 20px;
 }
 
 @media (max-width: 850px) {

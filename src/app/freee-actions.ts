@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { FORECAST_YEAR } from "@/lib/forecast";
 import { FREEE_ISSUER, FreeeApiError, exchangeFreeeCode, freeeAuthorizationUrl, getFreeeCompany, refreshFreeeTokens, revokeFreeeTokens, syncFreeeAccounting } from "@/lib/freee";
 import { activeTokens, beginSync, closeForecastSession, currentForecastDate, finishSync } from "@/lib/forecast-store";
-import { freeeSettings, localFreeeCallbackUrl } from "@/lib/freee-settings";
+import { freeeSettings } from "@/lib/freee-settings";
 import { authConfigured, beginFreeeLogin, clearFreeeSession, consumeFreeeLogin, createFreeeSession, currentSession, getSessionTokens, requireSession, saveSessionTokens } from "@/lib/security";
 
 function returnHome(notice: string): never {
@@ -16,10 +16,7 @@ class FreeeSettingsRequiredError extends Error {}
 
 export async function startFreee(_data: FormData) {
   const settings = freeeSettings();
-  if (!settings || !authConfigured()) {
-    if (localFreeeCallbackUrl()) redirect("/freee/setup");
-    returnHome("not-configured");
-  }
+  if (!settings || !authConfigured()) returnHome("not-configured");
   const callback = new URL(settings.redirectUri);
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");

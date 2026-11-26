@@ -19,7 +19,6 @@ type DashboardProps = {
     configured: boolean;
     connected: boolean;
     canSync: boolean;
-    localSetup?: boolean;
     companyName: string | null;
     syncedAt: string | null;
     accountItemsNeedSync: boolean;
@@ -176,7 +175,7 @@ function MetricCard({
 }
 
 function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<DashboardProps, "connection" | "lastClosedMonth" | "actions">) {
-  const { connected, configured, localSetup, syncedAt, canSync } = connection;
+  const { connected, configured, syncedAt, canSync } = connection;
   const connectionLabel = connected ? "接続済み" : "未接続";
   const syncTime = syncedAt ? timeFormat.format(new Date(syncedAt)) : "未同期";
   const needsLogin = connected && configured && !canSync;
@@ -194,7 +193,7 @@ function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<Dashboar
         <div><dt>最終同期</dt><dd>{syncTime}</dd></div>
         <div><dt>締め済み実績</dt><dd>{lastClosedMonth === 0 ? "未指定" : `${lastClosedMonth}月まで`}</dd></div>
       </dl>
-      {(connected || configured || localSetup) && (
+      {(connected || configured) && (
         <div className="connection-actions">
           {canSync && (
             <form action={actions.sync}>
@@ -219,7 +218,7 @@ function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<Dashboar
           {needsSetup && (
             <p className="connection-message">
               {syncedAt ? "取り込み済みの実績で見込みを計算できます。再同期には" : "実績を同期するには"}
-              {localSetup ? <a href="/freee/setup">接続設定</a> : "接続設定"}が必要です。
+              freeeログインのサーバー設定が必要です。
             </p>
           )}
           {connection.accountItemsNeedSync && <p className="connection-message">勘定科目別の内訳を表示するには、freeeから実績を再同期してください。</p>}
