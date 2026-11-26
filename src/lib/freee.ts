@@ -79,6 +79,7 @@ type JournalLine = {
 type Journal = {
   id: number;
   txn_date: string;
+  approval_status?: "none" | "in_progress" | "approved";
   debit: JournalLine[];
   credit: JournalLine[];
 };
@@ -401,6 +402,7 @@ export async function syncFreeeAccounting({ accessToken, companyId, year, throug
         }
         if (journalsSeen.has(journal.id)) continue;
         journalsSeen.add(journal.id);
+        if (journal.approval_status === "in_progress") continue;
         for (const line of journal.debit) accumulateLine(totals, line, -1, accounts, taxNames, fiscalYear.tax_method);
         for (const line of journal.credit) accumulateLine(totals, line, 1, accounts, taxNames, fiscalYear.tax_method);
       }

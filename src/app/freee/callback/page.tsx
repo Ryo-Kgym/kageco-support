@@ -3,6 +3,7 @@ import { completeFreee } from "@/app/freee-actions";
 import { requireSession } from "@/lib/security";
 
 type Search = Promise<Record<string, string | string[] | undefined>>;
+export const dynamic = "force-dynamic";
 
 export default async function FreeeCallback({ searchParams }: { searchParams: Search }) {
   await requireSession();

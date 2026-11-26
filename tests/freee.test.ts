@@ -78,6 +78,7 @@ test("syncs months through the cutoff, handles reversals, and counts recorded VA
   const asset = entry(13, [detail(4, 40_000, 131, 4_000)], [detail(1, 44_000, 2)]);
   const refund = entry(14, [detail(2, 1_000, 130, 100)], [detail(1, 1_100, 2)]);
   const allocatedPurchase = entry(15, [detail(3, 300, 502, 30)], [detail(1, 330, 2)], "2026-02-10");
+  const pendingSale = { ...entry(16, [detail(1, 110_000, 2)], [detail(2, 100_000, 129, 10_000)]), approval_status: "in_progress" };
   const requests: Array<Record<string, string>> = [];
   const fetcher: typeof fetch = async (resource, init) => {
     const path = new URL(String(resource)).pathname;
@@ -91,7 +92,7 @@ test("syncs months through the cutoff, handles reversals, and counts recorded VA
     if (query.start_issue_date === "2026-02-01") return Response.json({ data: [allocatedPurchase], next_page_token: null });
     if (query.start_issue_date === "2026-03-01") return Response.json({ data: [], next_page_token: null });
     if (query.page_token === "next") return Response.json({ data: [sales, refund], next_page_token: null });
-    return Response.json({ data: [sales, expense, transitionalPurchase, asset], next_page_token: "next" });
+    return Response.json({ data: [sales, expense, transitionalPurchase, asset, pendingSale], next_page_token: "next" });
   };
   const result = await syncFreeeAccounting({
     accessToken: "test-token", companyId: 123, year: 2026, throughMonth: 3, throughDate: "2026-03-18", fetcher,

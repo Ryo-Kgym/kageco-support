@@ -57,7 +57,7 @@ async function preferences(mode: Mode) {
   return row;
 }
 
-export async function savePreferences(mode: Mode, tax: TaxInputs, lastClosedMonth: number) {
+export async function savePreferences(mode: Mode, tax: TaxInputs, lastClosedMonth: number | null) {
   const db = await database();
   await db.query(`INSERT INTO forecast_preferences (year, mode, tax, last_closed_month) VALUES ($1, $2, $3, $4)
     ON CONFLICT (year, mode) DO UPDATE SET tax = EXCLUDED.tax, last_closed_month = EXCLUDED.last_closed_month`,
@@ -87,8 +87,9 @@ export async function loadForecast(mode: Mode) {
     return {
       actuals: demoMonths,
       plans: Object.values(plans).filter((plan) => plan !== null),
-      tax: stored?.last_closed_month == null ? demoTax : stored.tax,
+      tax: stored && Object.keys(stored.tax).length ? stored.tax : demoTax,
       lastClosedMonth: stored?.last_closed_month ?? 9,
+      lastClosedMonthSetting: stored?.last_closed_month ?? null,
       maxClosedMonth: 9,
       consumptionMethodConfirmed: true,
       companyName: null,
@@ -118,6 +119,7 @@ export async function loadForecast(mode: Mode) {
         ? simplifiedRates[settings.simpleBusinessCategory - 1] : undefined),
     },
     lastClosedMonth: Math.min(stored?.last_closed_month ?? maxClosedMonth, maxClosedMonth),
+    lastClosedMonthSetting: stored?.last_closed_month ?? null,
     maxClosedMonth,
     companyName: connection?.company_name ?? null,
     syncedAt: connection?.synced_at == null ? null : new Date(connection.synced_at).toISOString(),
