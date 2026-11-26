@@ -243,6 +243,44 @@ a {
   font-size: .875rem;
 }
 
+.actual-summary {
+  margin-bottom: 22px;
+}
+
+.actual-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 135px), 1fr));
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.actual-totals div {
+  min-width: 0;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.actual-totals dt {
+  color: var(--secondary);
+  font-size: .875rem;
+  font-weight: 700;
+}
+
+.actual-totals dd {
+  margin: 2px 0 0;
+  font-size: clamp(1.1rem, 1.7vw, 1.55rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.actual-totals dd.unavailable {
+  color: var(--muted);
+  font-size: 1rem;
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -481,22 +519,26 @@ a {
   cursor: pointer;
 }
 
-.missing-detail {
-  padding: 8px 12px;
+.forecast-guidance {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f7faf8;
-}
-
-.missing-detail ul {
-  margin: 8px 0 2px;
-  padding-left: 1.25rem;
   color: var(--secondary);
   font-size: .875rem;
 }
 
-.missing-detail li + li {
-  margin-top: 5px;
+.forecast-guidance p {
+  margin: 0;
+}
+
+.forecast-guidance a {
+  color: var(--forest);
+  font-weight: 700;
+  text-underline-offset: .14em;
 }
 
 .table-scroll {
