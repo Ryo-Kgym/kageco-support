@@ -3,8 +3,6 @@ import "server-only";
 type FreeeCredentials = { clientId: string; clientSecret: string };
 type FreeeSettings = FreeeCredentials & { redirectUri: string };
 
-const server = globalThis as typeof globalThis & { kagecoLocalFreeeCredentials?: FreeeCredentials };
-
 function environmentCredentials(): FreeeCredentials | null {
   const clientId = process.env.FREEE_CLIENT_ID;
   const clientSecret = process.env.FREEE_CLIENT_SECRET;
@@ -33,15 +31,9 @@ export function localFreeeCallbackUrl() {
   return `${origin.origin}/freee/callback`;
 }
 
-export function setLocalFreeeCredentials(credentials: FreeeCredentials) {
-  if (!localFreeeCallbackUrl()) return false;
-  server.kagecoLocalFreeeCredentials = credentials;
-  return true;
-}
-
 export function freeeSettings(): FreeeSettings | null {
   const origin = configuredOrigin();
   if (!origin) return null;
-  const credentials = environmentCredentials() ?? (localFreeeCallbackUrl() ? server.kagecoLocalFreeeCredentials : undefined);
+  const credentials = environmentCredentials();
   return credentials ? { ...credentials, redirectUri: `${origin.origin}/freee/callback` } : null;
 }

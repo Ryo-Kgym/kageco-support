@@ -79,7 +79,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
       lastClosedMonthSetting={data.lastClosedMonthSetting}
       connection={{
         configured: Boolean(freeeSettings()),
-        localSetup: Boolean(localFreeeCallbackUrl()) && !data.companyName,
+        localSetup: Boolean(localFreeeCallbackUrl()),
         companyName: data.companyName,
         syncedAt: data.syncedAt,
         status: data.tax.consumptionMethod && !data.consumptionMethodConfirmed ? "取り込んだ消費税の申告方式を確認し、年の前提を保存してください。" : null,
