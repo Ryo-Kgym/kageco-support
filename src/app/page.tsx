@@ -1,5 +1,5 @@
 import { login, logout, savePlan, saveTax, setPlanMode } from "@/app/forecast-actions";
-import { startFreee, syncFreee } from "@/app/freee-actions";
+import { disconnectFreee, startFreee, syncFreee } from "@/app/freee-actions";
 import { ForecastDashboard } from "@/components/forecast-dashboard";
 import { calculateForecast, FORECAST_YEAR } from "@/lib/forecast";
 import { loadForecast } from "@/lib/forecast-store";
@@ -15,14 +15,17 @@ const notices: Record<string, string> = {
   "oauth-cancelled": "freeeへの接続をキャンセルしました。",
   "company-required": "freeeで対象の事業所を選択して接続してください。",
   "individual-required": "個人事業主として登録された事業所を選択してください。",
-  "different-company": "現在接続中の事業所を選択してください。このアプリは1つの事業所を対象としています。",
+  "different-company": "このアプリで利用していた事業所を選択してください。このアプリは1つの事業所を対象としています。",
   connected: "freeeに接続しました。「freeeから同期」で実績を取り込めます。",
+  disconnected: "freeeとの接続を解除しました。取り込み済みの実績は引き続き表示します。",
+  "disconnect-unconfirmed": "アプリでの接続を解除しました。freee側で認可が無効になったかは確認できませんでした。",
+  "disconnect-retry": "接続状態が変わりました。もう一度「接続を解除」を押してください。",
   "connection-error": "freeeに接続できませんでした。認可情報とコールバックURLを確認してください。",
   "connection-changed": "同期中に接続先が変更されました。もう一度同期してください。",
   "before-year": "対象年の実績を取り込めるのは、対象年の開始後です。",
   synced: "freeeの実績を更新しました。",
   "sync-running": "同期中です。完了後に画面を更新してください。",
-  "sync-reconnect": "freeeの認可を更新できませんでした。事業所に再接続してください。",
+  "sync-reconnect": "freeeの認可を更新できませんでした。「接続を解除」を押した後、「freeeに接続」から同じ事業所に接続してください。",
   "sync-permission": "freeeの参照権限と契約プランを確認してください。",
   "sync-limit": "freeeのリクエスト上限に達しました。時間をおいて再実行してください。",
   "sync-error": "同期できませんでした。前回の同期結果がある場合は引き続き表示します。",
@@ -81,15 +84,17 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
       lastClosedMonthSetting={data.lastClosedMonthSetting}
       connection={{
         configured: Boolean(freeeSettings()),
+        connected: data.connected,
         localSetup: Boolean(localFreeeCallbackUrl()),
         companyName: data.companyName,
         syncedAt: data.syncedAt,
-        status: data.tax.consumptionMethod && !data.consumptionMethodConfirmed ? "取り込んだ消費税の申告方式を確認し、年の前提を保存してください。" : null,
+        status: data.tax.consumptionMethod && !data.consumptionMethodConfirmed ? "取り込んだ消費税の申告方式を確認し、「年末の見込みを計算」を押してください。" : null,
       }}
       notice={message}
       canLogout={!localOpenAccess()}
       actions={{
         startFreee,
+        disconnectFreee,
         sync: syncFreee,
         saveTax,
         savePlan,

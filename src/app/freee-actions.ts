@@ -3,8 +3,8 @@
 import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { FORECAST_YEAR } from "@/lib/forecast";
-import { FREEE_ISSUER, FreeeApiError, exchangeFreeeCode, freeeAuthorizationUrl, getFreeeCompany, refreshFreeeTokens, syncFreeeAccounting } from "@/lib/freee";
-import { activeTokens, beginSync, connectionDetails, consumeOAuthAttempt, currentForecastDate, finishSync, saveConnection, saveOAuthAttempt } from "@/lib/forecast-store";
+import { FREEE_ISSUER, FreeeApiError, exchangeFreeeCode, freeeAuthorizationUrl, getFreeeCompany, refreshFreeeTokens, revokeFreeeTokens, syncFreeeAccounting } from "@/lib/freee";
+import { activeTokens, beginSync, connectionDetails, consumeOAuthAttempt, currentForecastDate, disconnectConnection, finishSync, saveConnection, saveOAuthAttempt } from "@/lib/forecast-store";
 import { freeeSettings, localFreeeCallbackUrl } from "@/lib/freee-settings";
 import { requireSession } from "@/lib/security";
 
@@ -32,8 +32,9 @@ export async function completeFreee(form: FormData) {
   const state = form.get("state");
   const issuer = form.get("iss");
   if (typeof code !== "string" || !code || code.length > 4096 || typeof state !== "string"
-    || !/^[A-Za-z0-9_-]{43}$/.test(state) || (issuer && issuer !== FREEE_ISSUER)
-    || !(await consumeOAuthAttempt(state, session))) returnHome("invalid-oauth");
+    || !/^[A-Za-z0-9_-]{43}$/.test(state) || (issuer && issuer !== FREEE_ISSUER)) returnHome("invalid-oauth");
+  const oauthGeneration = await consumeOAuthAttempt(state, session);
+  if (oauthGeneration === null) returnHome("invalid-oauth");
 
   let outcome: string;
   try {
@@ -45,13 +46,21 @@ export async function completeFreee(form: FormData) {
       if (company.organizationType !== "individual") {
         outcome = "individual-required";
       } else {
-        outcome = await saveConnection(company.id, company.name, tokens) ? "connected" : "different-company";
+        outcome = await saveConnection(company.id, company.name, tokens, oauthGeneration);
       }
     }
   } catch {
     outcome = "connection-error";
   }
   returnHome(outcome);
+}
+
+export async function disconnectFreee(_data: FormData) {
+  await requireSession();
+  const tokens = await disconnectConnection();
+  if (!tokens) returnHome((await connectionDetails()) ? "disconnect-retry" : "disconnected");
+  const revoked = await revokeFreeeTokens(tokens);
+  returnHome(revoked ? "disconnected" : "disconnect-unconfirmed");
 }
 
 export async function syncFreee(_data: FormData) {

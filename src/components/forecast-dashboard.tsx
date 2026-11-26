@@ -13,6 +13,7 @@ type DashboardProps = {
   lastClosedMonthSetting: number | null;
   connection: {
     configured: boolean;
+    connected: boolean;
     localSetup?: boolean;
     companyName: string | null;
     syncedAt: string | null;
@@ -21,6 +22,7 @@ type DashboardProps = {
   notice?: string;
   actions: {
     startFreee: FormAction;
+    disconnectFreee: FormAction;
     sync: FormAction;
     saveTax: FormAction;
     savePlan: FormAction;
@@ -207,39 +209,45 @@ function MonthlyChart({ forecast: { months: rows } }: { forecast: ForecastResult
 }
 
 function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<DashboardProps, "connection" | "lastClosedMonth" | "actions">) {
-  const connected = connection.companyName !== null;
-  const connectionLabel = !connection.configured ? "接続設定が必要" : connected ? "接続済み" : "未接続";
-  const syncTime = connection.syncedAt ? timeFormat.format(new Date(connection.syncedAt)) : "未同期";
+  const { connected, configured, localSetup, syncedAt } = connection;
+  const connectionLabel = connected ? "接続済み" : "未接続";
+  const syncTime = syncedAt ? timeFormat.format(new Date(syncedAt)) : "未同期";
 
   return (
     <section className="dashboard-panel" id="freee" aria-labelledby="connection-heading">
       <header className="panel-heading">
         <h2 id="connection-heading">freee会計</h2>
       </header>
-      <p className={`connection-state${connection.configured && connected ? "" : " inactive"}`}>{connectionLabel}</p>
+      <p className={`connection-state${connected ? "" : " inactive"}`}>{connectionLabel}</p>
       <dl className="connection-meta">
         <div><dt>事業所</dt><dd>{connection.companyName ?? "未選択"}</dd></div>
         <div><dt>最終同期</dt><dd>{syncTime}</dd></div>
         <div><dt>締め済み実績</dt><dd>{lastClosedMonth === 0 ? "未指定" : `${lastClosedMonth}月まで`}</dd></div>
       </dl>
+      {syncedAt && !connected && <p className="connection-message">取り込み済みの実績で見込みを計算できます。</p>}
+      {connected && !configured && (
+        <p className="connection-message">
+          {syncedAt ? "取り込み済みの実績で見込みを計算できます。再同期には" : "実績を同期するには"}
+          {localSetup ? <a href="/freee/setup">接続設定</a> : "接続設定"}が必要です。
+        </p>
+      )}
       {connection.status && <p className="connection-message">{connection.status}</p>}
-      {connection.configured && (
+      {(connected || configured || localSetup) && (
         <div className="connection-actions">
-          {connected && (
+          {connected && configured && (
             <form action={actions.sync}>
               <button className="dashboard-button" type="submit">freeeから同期</button>
             </form>
           )}
-          <form action={actions.startFreee}>
-            <button className={`dashboard-button${connected ? " secondary" : ""}`} type="submit">
-              {connected ? "再接続" : "freeeに接続"}
-            </button>
-          </form>
-        </div>
-      )}
-      {!connection.configured && connection.localSetup && (
-        <div className="connection-actions">
-          <a className="dashboard-button" href="/freee/setup">接続設定の手順を見る</a>
+          {connected ? (
+            <form action={actions.disconnectFreee}>
+              <button className={`dashboard-button${configured ? " secondary" : ""}`} type="submit">接続を解除</button>
+            </form>
+          ) : (
+            <form action={actions.startFreee}>
+              <button className="dashboard-button" type="submit">freeeに接続</button>
+            </form>
+          )}
         </div>
       )}
     </section>

@@ -196,6 +196,26 @@ export function refreshFreeeTokens({ clientId, clientSecret, refreshToken, fetch
   }, fetcher);
 }
 
+export async function revokeFreeeTokens(tokens: FreeeTokens, fetcher: Fetch = fetch): Promise<boolean> {
+  const uniqueTokens = [...new Set([tokens.refreshToken, tokens.accessToken])];
+  const results = await Promise.all(uniqueTokens.map(async (token) => {
+    try {
+      const response = await fetcher(`${FREEE_ISSUER}/public_api/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token }),
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }));
+  return results.every(Boolean);
+}
+
 function accountingRequest<T>(path: string, accessToken: string, fetcher: Fetch, searchBody?: Record<string, unknown>): Promise<T> {
   return requestJson<T>(`${ACCOUNTING_ORIGIN}/api/1/${path}`, {
     method: searchBody ? "POST" : "GET",
