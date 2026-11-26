@@ -141,6 +141,10 @@ export async function consumeOAuthAttempt(nonce: string, session: string) {
   return attempt.expiresAt > Date.now();
 }
 
+export function clearOAuthAttempts() {
+  state.oauthAttempts.clear();
+}
+
 export async function saveConnection(companyId: number, name: string, tokens: FreeeTokens) {
   const previous = state.connection;
   if (previous && previous.details.company_id !== companyId) return false;

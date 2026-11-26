@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   agentRules: false,
   devIndicators: false,
-  logging: { incomingRequests: { ignore: [/^\/freee\/callback(?:\?|$)/] } },
+  logging: { serverFunctions: false, incomingRequests: { ignore: [/^\/freee\/callback(?:\?|$)/] } },
   poweredByHeader: false,
   async headers() {
     return [{
