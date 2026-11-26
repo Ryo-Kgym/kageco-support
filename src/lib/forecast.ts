@@ -34,6 +34,13 @@ export interface TaxInputs {
   twoTenthsEligible?: boolean;
 }
 
+export const DEFAULT_OPTIONAL_TAX_AMOUNTS = {
+  otherIncomeDeductions: 0,
+  otherResidentDeductions: 0,
+  incomeTaxCredit: 0,
+  donationsPlanned: 0,
+} as const satisfies Partial<TaxInputs>;
+
 export interface ForecastInput {
   year: number;
   lastClosedMonth: number;
