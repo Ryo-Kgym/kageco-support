@@ -317,6 +317,14 @@ a {
   font-weight: 600;
 }
 
+.account-breakdown-more summary {
+  min-height: 36px;
+  padding-block: 7px;
+  color: var(--forest);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .financial-grid,
 .metrics-grid {
   display: grid;
@@ -325,6 +333,10 @@ a {
 
 .financial-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.financial-grid:has(.account-breakdown-more[open]) {
+  align-items: start;
 }
 
 .metrics-grid {
@@ -344,11 +356,13 @@ a {
 }
 
 .financial-grid .metric-card {
+  gap: 8px;
+  padding: clamp(16px, 1.6vw, 20px);
   container-type: inline-size;
 }
 
 @container (min-width: 450px) {
-  .account-breakdown-amounts {
+  .account-breakdown-amounts:has(> div:nth-child(2)) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 16px;
   }
@@ -1142,6 +1156,11 @@ a {
 @media (max-width: 640px) {
   .financial-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .account-breakdown-more summary {
+    min-height: 44px;
+    padding-block: 11px;
   }
 }
 

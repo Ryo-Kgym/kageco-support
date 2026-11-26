@@ -75,6 +75,14 @@ function AccountBreakdownList({ breakdown, itemColors, needsSync }: {
 }) {
   if (!breakdown) return null;
   const { items, manual, unavailable, hasMissingMonths } = breakdown;
+  const previewCount = 4;
+  const accountRows = items.map(({ id, name, amount }) => (
+    <div key={id}>
+      <dt><span className="legend-swatch" style={{ "--bar-color": itemColors.get(id)?.color } as CSSProperties} aria-hidden="true" />{name}</dt>
+      <dd>{yen(amount)}</dd>
+    </div>
+  ));
+  const remainingCount = Math.max(0, accountRows.length - previewCount);
 
   return (
     <div className="account-breakdown">
@@ -82,15 +90,16 @@ function AccountBreakdownList({ breakdown, itemColors, needsSync }: {
       {hasMissingMonths && <p>集計できた月の内訳</p>}
       {items.length === 0 && manual === null && unavailable === null ? <p>該当する勘定科目なし</p> : (
         <dl className="account-breakdown-amounts">
-          {items.map(({ id, name, amount }) => (
-            <div key={id}>
-              <dt><span className="legend-swatch" style={{ "--bar-color": itemColors.get(id)?.color } as CSSProperties} aria-hidden="true" />{name}</dt>
-              <dd>{yen(amount)}</dd>
-            </div>
-          ))}
+          {accountRows.slice(0, previewCount)}
           {manual !== null && <div><dt>手入力分（科目なし）</dt><dd>{yen(manual)}</dd></div>}
           {unavailable !== null && <div><dt>科目未取得分</dt><dd>{yen(unavailable)}</dd></div>}
         </dl>
+      )}
+      {remainingCount > 0 && (
+        <details className="account-breakdown-more" suppressHydrationWarning>
+          <summary>残り{remainingCount}科目を表示</summary>
+          <dl className="account-breakdown-amounts">{accountRows.slice(previewCount)}</dl>
+        </details>
       )}
       {unavailable !== null && needsSync && <p><a href="#freee">freee連携から内訳を取得</a></p>}
     </div>
