@@ -1,4 +1,4 @@
-import { recentClosedAmounts, type ForecastMonth } from "./forecast";
+import { calculateTrend, type ForecastMonth } from "./forecast";
 import type { AccountItemAmount, FreeeAccountingMonth } from "./freee";
 
 const categories = ["sales", "expenses"] as const;
@@ -38,36 +38,35 @@ function addItems(totals: Map<number, AccountItemAmount>, items: AccountItemAmou
 
 export function getChartAccountItems(months: ForecastMonth[], actuals: FreeeAccountingMonth[]): MonthlyChartAccountItems {
   const byMonth = new Map(actuals.map((record) => [record.month, record]));
-  const lastClosedMonth = months.filter(({ closed }) => closed).at(-1)?.month ?? 0;
 
   function actualItems(month: number, category: Category, amount: number | null) {
     const items = byMonth.get(month)?.accountItems?.[category];
     return amount !== null && items?.reduce((sum, item) => sum + item.amount, 0) === amount ? items : null;
   }
 
-  function averageItems(category: Category) {
-    const sample = recentClosedAmounts(byMonth, lastClosedMonth, category);
-    if (sample.length === 0) return null;
+  function trendItems(category: Category) {
+    const lastClosedMonth = months.findLast(({ closedByAmount }) => closedByAmount[category])?.month ?? 0;
+    const { amount: forecastAmount, included } = calculateTrend(byMonth, lastClosedMonth, category);
+    if (forecastAmount === null) return null;
     const totals = new Map<number, AccountItemAmount>();
-    for (const { month, amount } of sample) {
+    for (const { month, amount } of included) {
       const items = actualItems(month, category, amount);
       if (!items) return null;
       addItems(totals, items);
     }
 
     const rounded = [...totals.values()].map((item) => {
-      const amount = Math.floor(item.amount / sample.length);
-      return { item, amount, remainder: item.amount - amount * sample.length };
+      const amount = Math.floor(item.amount / included.length);
+      return { item, amount, remainder: item.amount - amount * included.length };
     }).sort((a, b) => b.remainder - a.remainder || a.item.id - b.item.id);
-    const average = Math.round(sample.reduce((sum, { amount }) => sum + amount, 0) / sample.length);
     // Allocate the remaining yen by fractional remainder so the account amounts sum to the forecast total.
-    const remaining = average - rounded.reduce((sum, { amount }) => sum + amount, 0);
+    const remaining = forecastAmount - rounded.reduce((sum, { amount }) => sum + amount, 0);
     return rounded.map(({ item, amount }, index) => ({ ...item, amount: amount + Number(index < remaining) }));
   }
 
-  const averages = { sales: averageItems("sales"), expenses: averageItems("expenses") };
+  const estimates = { sales: trendItems("sales"), expenses: trendItems("expenses") };
   function displayedItems(row: ForecastMonth, category: Category) {
-    if (row.sources[category] === "average") return averages[category];
+    if (row.sources[category] === "average") return estimates[category];
     if (row.sources[category] === "actual") return actualItems(row.month, category, row.actual[category]);
     return null;
   }
