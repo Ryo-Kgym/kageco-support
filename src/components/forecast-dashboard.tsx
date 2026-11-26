@@ -166,7 +166,7 @@ function MonthlyChart({ forecast: { months: rows } }: { forecast: ForecastResult
 
 function ConnectionPanel({ connection, lastClosedMonth, actions, isDemo }: Pick<DashboardProps, "connection" | "lastClosedMonth" | "actions" | "isDemo">) {
   const connected = connection.companyName !== null;
-  const connectionLabel = connected ? "接続済み" : connection.configured ? "未接続" : "接続設定が必要";
+  const connectionLabel = !connection.configured ? "接続設定が必要" : connected ? "接続済み" : "未接続";
   const syncTime = connection.syncedAt ? timeFormat.format(new Date(connection.syncedAt)) : "未同期";
 
   return (
@@ -174,7 +174,7 @@ function ConnectionPanel({ connection, lastClosedMonth, actions, isDemo }: Pick<
       <header className="panel-heading">
         <h2 id="connection-heading">freee会計</h2>
       </header>
-      <p className={`connection-state${connected ? "" : " inactive"}`}>{connectionLabel}</p>
+      <p className={`connection-state${connection.configured && connected ? "" : " inactive"}`}>{connectionLabel}</p>
       <dl className="connection-meta">
         <div><dt>事業所</dt><dd>{connection.companyName ?? "未選択"}</dd></div>
         <div><dt>最終同期</dt><dd>{syncTime}</dd></div>
@@ -193,17 +193,14 @@ function ConnectionPanel({ connection, lastClosedMonth, actions, isDemo }: Pick<
               {connected ? "再接続" : "freeeに接続"}
             </button>
           </form>
-          {connection.localSetup && !connected && (
-            <a className="dashboard-button secondary" href="/freee/setup">接続設定を変更</a>
-          )}
         </div>
       )}
-      {!connection.configured && connection.localSetup && !isDemo && (
+      {!connection.configured && connection.localSetup && (
         <div className="connection-actions">
-          <a className="dashboard-button" href="/freee/setup">freeeに接続</a>
+          <a className="dashboard-button" href="/freee/setup">接続設定の手順を見る</a>
         </div>
       )}
-      {isDemo && (connection.configured || connection.localSetup) && (
+      {isDemo && connection.configured && (
         <div className="connection-actions">
           <form action={actions.startFreee}>
             <button className="dashboard-button" type="submit">実データを接続</button>

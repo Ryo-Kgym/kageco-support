@@ -1,46 +1,34 @@
 import { redirect } from "next/navigation";
-import { configureAndStartFreee } from "@/app/freee-actions";
-import { connectionDetails } from "@/lib/forecast-store";
 import { localFreeeCallbackUrl } from "@/lib/freee-settings";
-import { getMode, requireSession } from "@/lib/security";
-
-type Search = Promise<Record<string, string | string[] | undefined>>;
+import { requireSession } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
-export default async function FreeeSetup({ searchParams }: { searchParams: Search }) {
+export default async function FreeeSetup() {
   await requireSession();
   const callbackUrl = localFreeeCallbackUrl();
-  if (!callbackUrl || await getMode() !== "real" || await connectionDetails()) redirect("/#freee");
-  const { error } = await searchParams;
+  if (!callbackUrl) redirect("/#freee");
 
   return (
     <main className="dashboard-login">
       <section className="dashboard-panel" aria-labelledby="freee-setup-heading">
         <header className="panel-heading">
-          <h1 id="freee-setup-heading">freeeに接続</h1>
-          <p><a href="https://app.secure.freee.co.jp/developers/applications" target="_blank" rel="noreferrer">freeeアプリ管理</a>で、事業所用のOAuthアプリを開いてください。</p>
+          <h1 id="freee-setup-heading">freeeの接続設定</h1>
+          <p><a href="https://app.secure.freee.co.jp/developers/applications" target="_blank" rel="noreferrer">freeeアプリ管理</a>で事業所用のOAuthアプリを開きます。</p>
         </header>
         <dl className="freee-callback-address">
           <dt>freeeに登録するコールバックURL</dt>
           <dd><code>{callbackUrl}</code></dd>
         </dl>
-        <form action={configureAndStartFreee} className="editable-form" autoComplete="off">
-          {error === "credentials" && <p className="dashboard-notice" role="alert">Client IDとClient Secretの入力を確認してください。</p>}
-          <label className="form-field">
-            <span>Client ID</span>
-            <input name="clientId" type="text" required maxLength={512} autoCapitalize="off" spellCheck={false} />
-          </label>
-          <label className="form-field">
-            <span>Client Secret</span>
-            <input name="clientSecret" type="password" required maxLength={1024} autoComplete="off" />
-          </label>
-          <p className="form-hint">接続設定はサーバー起動中だけ保持します。</p>
-          <div className="form-footer">
-            <a className="dashboard-button secondary" href="/#freee">戻る</a>
-            <button className="dashboard-button" type="submit">freeeで認証する</button>
-          </div>
-        </form>
+        <p><code>.env.example</code> を参考に、Gitの管理対象外の <code>.env.local</code> に設定します。</p>
+        <ul>
+          <li><code>FREEE_CLIENT_ID</code> にClient ID</li>
+          <li><code>FREEE_CLIENT_SECRET</code> にClient Secret</li>
+        </ul>
+        <p>設定後、ダッシュボードで「freeeに接続」を押します。設定が反映されない場合は開発サーバーを再起動します。</p>
+        <div className="form-footer">
+          <a className="dashboard-button secondary" href="/#freee">ダッシュボードに戻る</a>
+        </div>
       </section>
     </main>
   );
