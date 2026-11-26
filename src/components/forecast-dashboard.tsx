@@ -68,10 +68,9 @@ function ActualSummary({ forecast }: { forecast: ForecastResult }) {
   const expenses = closedActualAmount(closedMonths, "expenses");
   const profit = sales === null || expenses === null ? null : sales - expenses;
   const amounts = [
-    { label: "事業売上", amount: sales, missing: "未集計" },
-    { label: "事業経費", amount: expenses, missing: "未集計" },
-    { label: "事業利益", amount: profit, missing: "未集計" },
-    { label: "寄附済額（入力値）", amount: forecast.donationsPaid, missing: "未入力" },
+    { label: "事業売上", amount: sales },
+    { label: "事業経費", amount: expenses },
+    { label: "事業利益", amount: profit },
   ];
 
   return (
@@ -81,10 +80,10 @@ function ActualSummary({ forecast }: { forecast: ForecastResult }) {
         <p>{lastMonth === 0 ? "締め済み月なし" : lastMonth === 1 ? "1月の事業収支" : `1月〜${lastMonth}月の事業収支`}</p>
       </div>
       <dl className="actual-totals">
-        {amounts.map(({ label, amount, missing }) => (
+        {amounts.map(({ label, amount }) => (
           <div key={label}>
             <dt>{label}</dt>
-            <dd className={amount === null ? "unavailable" : undefined}>{amount === null ? missing : yen(amount)}</dd>
+            <dd className={amount === null ? "unavailable" : undefined}>{amount === null ? "未集計" : yen(amount)}</dd>
           </div>
         ))}
       </dl>
