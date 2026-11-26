@@ -141,6 +141,22 @@ a {
   scroll-margin-top: 88px;
 }
 
+.dashboard-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dashboard-year-switch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  width: min(100%, 15rem);
+}
+
 .dashboard-period {
   margin: 0 0 6px;
   color: var(--forest);
@@ -476,12 +492,6 @@ a {
   margin: 0;
   padding-inline-start: 1.3em;
   color: var(--muted);
-}
-
-.dashboard-overview {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
 }
 
 .dashboard-panel {
@@ -964,11 +974,15 @@ a {
   }
 }
 
-.settings-grid {
+.settings-grid,
+.settings-column {
   display: grid;
+  gap: 20px;
+}
+
+.settings-grid {
   grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
   align-items: start;
-  gap: 20px;
 }
 
 .editable-form {
@@ -1143,7 +1157,8 @@ a {
   width: 100%;
 }
 
-.login-panel .dashboard-button:disabled {
+.login-panel .dashboard-button:disabled,
+.connection-actions .dashboard-button:disabled {
   border-color: var(--line);
   background: var(--canvas);
   color: var(--muted);
@@ -1255,7 +1270,7 @@ a {
     padding-block: 10px;
   }
 
-  .field-grid {
+  .field-grid:not(.deduction-amount-grid) {
     grid-template-columns: minmax(0, 1fr);
   }
 

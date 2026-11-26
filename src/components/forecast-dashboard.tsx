@@ -2,11 +2,16 @@ import type { CSSProperties, ReactNode } from "react";
 import { MonthlyChart } from "@/components/monthly-chart";
 import { APP_NAME } from "@/lib/app-name";
 import { getAccountItemColors, summarizeAccountItems, type AccountItemColors, type MonthlyChartAccountItems } from "@/lib/chart-account-items";
-import { BEPPU_RESIDENT_TAX, DEFAULT_TAX_FORM_AMOUNTS, type ForecastResult, type MonthAmounts, type MonthlyPlanMode, type TaxInputs } from "@/lib/forecast";
+import {
+  BEPPU_RESIDENT_TAX, DEFAULT_TAX_FORM_AMOUNTS, ITEMIZED_DEDUCTIONS, MAX_MEDICAL_EXPENSE_DEDUCTION, TAX_FORECAST_YEARS,
+  isTaxForecastYear, itemizedDeductionsForYear,
+  type ForecastResult, type IncomeTaxDetails, type MonthAmounts, type MonthlyPlanMode, type TaxInputs,
+} from "@/lib/forecast";
 
 type FormAction = (formData: FormData) => Promise<void>;
 type DashboardProps = {
   year: number;
+  years: readonly number[];
   forecast: ForecastResult;
   accountItems: MonthlyChartAccountItems;
   tax: TaxInputs;
@@ -29,11 +34,13 @@ type DashboardProps = {
     status?: string | null;
   };
   notice?: string;
+  closedMonthsNotice?: string;
   actions: {
     startFreee: FormAction;
     disconnectFreee: FormAction;
     sync: FormAction;
     saveClosedMonth: FormAction;
+    saveIndividualClosedMonths: FormAction;
     saveTax: FormAction;
     savePlan: FormAction;
     setPlanMode: FormAction;
@@ -343,21 +350,43 @@ function TaxCalculation({ steps, missing }: { steps: CalculationStep[] | null; m
   );
 }
 
+function taxableIncomeExpression(details: Pick<IncomeTaxDetails,
+  "totalIncome" | "basicDeduction" | "socialInsurance" | "smallBusinessMutualAidDeduction" | "medicalExpenseDeduction" |
+  "casualtyLossDeduction" | "itemizedDeductions" | "taxableIncome">,
+  additionalDeductions: string[],
+) {
+  const itemizedTerms = ITEMIZED_DEDUCTIONS.flatMap(({ key, label }) => {
+    const amount = details.itemizedDeductions[key] ?? 0;
+    return amount > 0 ? [`${yen(amount)}（${label}）`] : [];
+  });
+  const terms = [
+    `${yen(details.totalIncome)}（合計所得）`,
+    `${yen(details.basicDeduction)}（基礎控除）`,
+    `${yen(details.socialInsurance)}（社会保険料控除）`,
+    `${yen(details.smallBusinessMutualAidDeduction)}（小規模企業共済等掛金控除）`,
+    `${yen(details.medicalExpenseDeduction)}（医療費控除）`,
+    `${yen(details.casualtyLossDeduction)}（雑損控除）`,
+    ...itemizedTerms,
+    ...additionalDeductions,
+  ];
+  return `${terms.join(" − ")} → ${yen(details.taxableIncome)}`;
+}
+
 function donationLimitSteps(details: ForecastResult["donationLimitDetails"], amount: number | null): CalculationStep[] | null {
   if (!details) return null;
 
-  const { cityRate, prefectureRate, singleIncomeExemptionLimit, adjustmentTaxableThreshold, adjustmentMinimumBase,
+  const { cityRate, prefectureRate, adjustmentTaxableThreshold, adjustmentMinimumBase,
     adjustmentRate, specialCreditCapRate, donationIncomeCapRate, selfContribution } = BEPPU_RESIDENT_TAX;
   const steps = [
     {
       label: "住民税の課税所得（下限0円、1,000円未満切り捨て）",
-      expression: `${yen(details.totalIncome)}（合計所得） − ${yen(details.basicDeduction)}（基礎控除） − ${yen(details.socialInsurance)}（社会保険料控除） − ${yen(details.otherDeductions)}（その他の所得控除） → ${yen(details.taxableIncome)}`,
+      expression: taxableIncomeExpression(details, [`${yen(details.otherDeductions)}（その他の所得控除）`]),
     },
   ];
   if (details.incomeExempt) {
     return [...steps, {
-      label: "所得割の非課税基準（扶養親族等なし）",
-      expression: `${yen(details.totalIncome)} ≦ ${yen(singleIncomeExemptionLimit)} のため、所得割と寄附上限の目安は0円`,
+      label: "所得割の非課税基準",
+      expression: `${yen(details.totalIncome)} ≦ ${yen(details.incomeExemptionLimit)} のため、所得割と寄附上限の目安は0円`,
     }];
   }
 
@@ -432,7 +461,7 @@ function DonationLimitCard({ forecast, year }: Pick<DashboardProps, "forecast" |
       { label: "寄附予定", value: yen(forecast.donationsPlanned) },
     ]} footer={(
       <>
-        <p className="metric-caption">寄附上限は所得割で試算します。非課税判定は扶養親族等がいない場合の基準を使います。</p>
+        <p className="metric-caption">寄附上限は所得割で試算します。</p>
         <TaxCalculation steps={donationLimitSteps(details, forecast.donationLimit)} missing={forecast.missing.donationLimit} />
       </>
     )} />
@@ -441,15 +470,33 @@ function DonationLimitCard({ forecast, year }: Pick<DashboardProps, "forecast" |
 
 function IncomeTaxCard({ forecast }: Pick<DashboardProps, "forecast">) {
   const details = forecast.incomeTaxDetails;
+  const fixedTaxReduction = details?.fixedTaxReduction;
   const steps = details && [
+    ...(details.otherEligibleDonations > 0 ? [
+      {
+        label: "確定申告の対象となる寄附金",
+        expression: `${yen(details.eligibleDonations - details.otherEligibleDonations)}（ふるさと納税） ＋ ${yen(details.otherEligibleDonations)}（その他の特定寄附金） ＝ ${yen(details.eligibleDonations)}`,
+      },
+      {
+        label: "寄附金控除（下限0円）",
+        expression: `少ない方（${yen(details.eligibleDonations)}、${yen(Math.floor(details.totalIncome * 40 / 100))}（合計所得の40%）） − 2,000円 → ${yen(details.donationDeduction)}`,
+      },
+    ] : []),
     {
       label: "課税所得（下限0円、1,000円未満切り捨て）",
-      expression: `${yen(details.totalIncome)}（合計所得） − ${yen(details.basicDeduction)}（基礎控除） − ${yen(details.socialInsurance)}（社会保険料控除） − ${yen(details.otherIncomeDeductions)}（その他の所得控除） − ${yen(details.donationDeduction)}（寄附金控除） → ${yen(details.taxableIncome)}`,
+      expression: taxableIncomeExpression(details, [
+        `${yen(details.otherIncomeDeductions)}（その他の所得控除）`,
+        `${yen(details.donationDeduction)}（寄附金控除）`,
+      ]),
     },
     {
-      label: "所得税（下限0円）",
-      expression: `${yen(details.taxableIncome)} × ${details.rate}% − ${yen(details.bracketDeduction)}（速算控除額） − ${yen(details.taxCredit)}（税額控除） → ${yen(details.baseTax)}`,
+      label: fixedTaxReduction === undefined ? "所得税（下限0円）" : "定額減税前の所得税（下限0円）",
+      expression: `${yen(details.taxableIncome)} × ${details.rate}% − ${yen(details.bracketDeduction)}（速算控除額） − ${yen(details.housingLoanTaxCredit)}（住宅ローン控除） − ${yen(details.taxCredit)}（その他の税額控除） → ${yen(details.baseTax + (fixedTaxReduction ?? 0))}`,
     },
+    ...(fixedTaxReduction === undefined ? [] : [{
+      label: "定額減税後の所得税",
+      expression: `${yen(details.baseTax + fixedTaxReduction)}（減税前の所得税） − ${yen(fixedTaxReduction)}（定額減税額） ＝ ${yen(details.baseTax)}`,
+    }]),
     {
       label: "復興特別所得税（1円未満切り捨て）",
       expression: `${yen(details.baseTax)} × ${details.reconstructionRate}% → ${yen(details.reconstructionTax)}`,
@@ -608,16 +655,18 @@ function ConnectionPanel({ connection, lastClosedSalesMonth, lastClosedExpenseMo
   );
 }
 
-function AmountField({ name, label, value, signed = false }: {
+function AmountField({ name, label, value, max, signed = false }: {
   name: string;
   label: string;
   value?: number | null;
+  max?: number;
   signed?: boolean;
 }) {
   return (
     <label className="form-field">
       <span>{label}（円）</span>
-      <input type="number" name={name} defaultValue={value ?? ""} min={signed ? undefined : 0} step="1" inputMode={signed ? "decimal" : "numeric"} />
+      <input type="number" name={name} defaultValue={value ?? ""} min={signed ? undefined : 0} max={max} step="1"
+        inputMode={signed ? "decimal" : "numeric"} />
     </label>
   );
 }
@@ -626,14 +675,14 @@ function ClosedMonthField({ name, label, value, fallbackLabel, maxClosedMonth }:
   name: string;
   label: string;
   value: number | null;
-  fallbackLabel: string;
+  fallbackLabel?: string;
   maxClosedMonth: number;
 }) {
   return (
     <label className="form-field">
       <span>{label}</span>
       <select name={name} defaultValue={value ?? ""}>
-        <option value="">{fallbackLabel}</option>
+        {fallbackLabel && <option value="">{fallbackLabel}</option>}
         <option value={0}>締め済みの月なし</option>
         {months.slice(0, maxClosedMonth).map((month) => <option key={month} value={month}>{month}月</option>)}
       </select>
@@ -641,10 +690,61 @@ function ClosedMonthField({ name, label, value, fallbackLabel, maxClosedMonth }:
   );
 }
 
-function TaxForm({ tax, lastClosedSalesMonthSetting, lastClosedExpenseMonthSetting, maxClosedMonth, action }:
-  Pick<DashboardProps, "tax" | "lastClosedSalesMonthSetting" | "lastClosedExpenseMonthSetting" | "maxClosedMonth"> & {
-  action: FormAction;
-}) {
+function ClosedMonthSettings({ lastClosedSalesMonthSetting, lastClosedExpenseMonthSetting, maxClosedMonth, closedMonthsNotice, action }:
+  Pick<DashboardProps, "lastClosedSalesMonthSetting" | "lastClosedExpenseMonthSetting" | "maxClosedMonth" | "closedMonthsNotice"> & { action: FormAction }) {
+  return (
+    <section id="aggregation-period" className="dashboard-panel" aria-labelledby="aggregation-period-heading">
+      <header className="panel-heading">
+        <h2 id="aggregation-period-heading">実績の集計期間</h2>
+        <p>売上と経費で締め月が異なる場合に設定します。</p>
+      </header>
+      <form action={action} className="editable-form">
+        <div className="field-grid">
+          <ClosedMonthField name="lastClosedSalesMonth" label="売上の締め済み最終月" value={lastClosedSalesMonthSetting}
+            fallbackLabel="共通の設定に従う" maxClosedMonth={maxClosedMonth} />
+          <ClosedMonthField name="lastClosedExpenseMonth" label="支出の締め済み最終月" value={lastClosedExpenseMonthSetting}
+            fallbackLabel="共通の設定に従う" maxClosedMonth={maxClosedMonth} />
+        </div>
+        {closedMonthsNotice && <p className="dashboard-notice" role="status">{closedMonthsNotice}</p>}
+        <div className="form-footer">
+          <button className="dashboard-button" type="submit">締め月を保存</button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function ItemizedDeductionFields({ tax, year }: Pick<DashboardProps, "tax" | "year">) {
+  const deductions = itemizedDeductionsForYear(year);
+  const groups = [
+    { title: "生命保険料・地震保険料控除", personal: false },
+    { title: "配偶者・扶養親族などの控除", personal: true },
+  ];
+
+  return (
+    <div className="form-group">
+      {groups.map(({ title, personal }) => (
+        <details key={title} className="tax-form-details" suppressHydrationWarning>
+          <summary>{title}</summary>
+          <div className="tax-form-details-content">
+            {deductions.filter((deduction) => deduction.personal === personal).map(({ key, label }) => (
+              <fieldset key={key} className="form-group">
+                <legend>{label}</legend>
+                <div className="field-grid deduction-amount-grid">
+                  <AmountField name={`incomeDeductions.${key}`} label="所得税" value={tax.incomeDeductions?.[key] ?? 0} />
+                  <AmountField name={`residentDeductions.${key}`} label="住民税" value={tax.residentDeductions?.[key] ?? 0} />
+                </div>
+              </fieldset>
+            ))}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function TaxForm({ tax, year, action }: Pick<DashboardProps, "tax" | "year"> & { action: FormAction }) {
+  const donationMethod = tax.donationMethod === null ? "" : tax.donationMethod ?? "return";
   return (
     <section className="dashboard-panel" aria-labelledby="tax-heading">
       <header className="panel-heading">
@@ -658,15 +758,20 @@ function TaxForm({ tax, lastClosedSalesMonthSetting, lastClosedExpenseMonthSetti
             <AmountField name="salaryGross" label="給与・賞与の年額" value={tax.salaryGross} />
             <AmountField name="blueDeduction" label="青色申告特別控除" value={tax.blueDeduction ?? DEFAULT_TAX_FORM_AMOUNTS.blueDeduction} />
             <AmountField name="socialInsurance" label="社会保険料控除" value={tax.socialInsurance} />
+            <AmountField name="smallBusinessMutualAidDeduction" label="小規模企業共済等掛金控除"
+              value={tax.smallBusinessMutualAidDeduction ?? DEFAULT_TAX_FORM_AMOUNTS.smallBusinessMutualAidDeduction} />
+            <AmountField name="medicalExpenseDeduction" label="医療費控除額" max={MAX_MEDICAL_EXPENSE_DEDUCTION}
+              value={tax.medicalExpenseDeduction ?? DEFAULT_TAX_FORM_AMOUNTS.medicalExpenseDeduction} />
           </div>
+          <p className="form-hint">共済等はiDeCoを含む対象掛金の年額、医療費は計算済みの控除額を入力します。「その他の所得控除」に含めていた金額は、専用欄に移してください。</p>
         </fieldset>
         <fieldset className="form-group">
           <legend>ふるさと納税</legend>
           <div className="field-grid">
-            <AmountField name="donationsPaid" label="寄附済額" value={tax.donationsPaid} />
+            <AmountField name="donationsPaid" label="寄附済額" value={tax.donationsPaid ?? DEFAULT_TAX_FORM_AMOUNTS.donationsPaid} />
             <label className="form-field">
               <span>寄附控除の手続き</span>
-              <select name="donationMethod" defaultValue={tax.donationMethod ?? ""}>
+              <select key={donationMethod} name="donationMethod" defaultValue={donationMethod}>
                 <option value="">未選択</option>
                 <option value="return">確定申告</option>
                 <option value="one-stop">ワンストップ特例</option>
@@ -701,27 +806,44 @@ function TaxForm({ tax, lastClosedSalesMonthSetting, lastClosedExpenseMonthSetti
         </fieldset>
         {/* The native disclosure can open before React hydrates it. */}
         <details className="tax-form-details" suppressHydrationWarning>
-          <summary>詳細設定</summary>
+          <summary>税額試算の詳細</summary>
           <div className="tax-form-details-content">
             <fieldset className="form-group">
-              <legend>集計期間</legend>
+              <legend>所得控除の内訳</legend>
+              <p className="form-hint">所得税・住民税それぞれの計算済みの控除額を入力します。「その他の所得控除」に入力済みの金額は専用欄に移してください。</p>
+              <ItemizedDeductionFields tax={tax} year={year} />
+            </fieldset>
+            <fieldset className="form-group">
+              <legend>雑損控除と寄附金控除</legend>
               <div className="field-grid">
-                <ClosedMonthField name="lastClosedSalesMonth" label="売上の締め済み最終月" value={lastClosedSalesMonthSetting}
-                  fallbackLabel="共通の設定に従う" maxClosedMonth={maxClosedMonth} />
-                <ClosedMonthField name="lastClosedExpenseMonth" label="支出の締め済み最終月" value={lastClosedExpenseMonthSetting}
-                  fallbackLabel="共通の設定に従う" maxClosedMonth={maxClosedMonth} />
+                <AmountField name="casualtyLossDeduction" label="雑損控除額"
+                  value={tax.casualtyLossDeduction ?? DEFAULT_TAX_FORM_AMOUNTS.casualtyLossDeduction} />
+                <AmountField name="otherEligibleDonations" label="ふるさと納税以外の特定寄附金"
+                  value={tax.otherEligibleDonations ?? DEFAULT_TAX_FORM_AMOUNTS.otherEligibleDonations} />
               </div>
-              <p className="form-hint">売上と経費で締め月が異なる場合に設定します。</p>
+              <p className="form-hint">雑損控除は計算済みの控除額を入力します。特定寄附金は所得控除を受ける分の寄附額を入力します。寄附額はふるさと納税と合算して確定申告を前提に試算します。</p>
             </fieldset>
             <fieldset className="form-group">
               <legend>所得税の控除と精算</legend>
               <div className="field-grid">
-                <AmountField name="otherIncomeDeductions" label="その他の所得控除" value={tax.otherIncomeDeductions ?? DEFAULT_TAX_FORM_AMOUNTS.otherIncomeDeductions} />
-                <AmountField name="incomeTaxCredit" label="所得税の税額控除" value={tax.incomeTaxCredit ?? DEFAULT_TAX_FORM_AMOUNTS.incomeTaxCredit} />
+                <AmountField name="otherIncomeDeductions" label="所得税のその他の所得控除" value={tax.otherIncomeDeductions ?? DEFAULT_TAX_FORM_AMOUNTS.otherIncomeDeductions} />
+                <AmountField name="housingLoanTaxCredit" label="住宅ローン控除額"
+                  value={tax.housingLoanTaxCredit ?? DEFAULT_TAX_FORM_AMOUNTS.housingLoanTaxCredit} />
+                <AmountField name="incomeTaxCredit" label="所得税のその他の税額控除" value={tax.incomeTaxCredit ?? DEFAULT_TAX_FORM_AMOUNTS.incomeTaxCredit} />
                 <AmountField name="withheldIncomeTax" label="源泉徴収税額" value={tax.withheldIncomeTax} />
                 <AmountField name="prepaidIncomeTax" label="所得税の予定納税額" value={tax.prepaidIncomeTax} />
+                {year === 2024 && (
+                  <label className="form-field">
+                    <span>定額減税の対象人数（本人を除く）</span>
+                    <input type="number" name="fixedTaxReductionDependents" defaultValue={tax.fixedTaxReductionDependents ?? 0}
+                      min={0} step="1" inputMode="numeric" aria-describedby="fixed-tax-reduction-hint" />
+                  </label>
+                )}
               </div>
-              <p className="form-hint">その他の所得控除には、所得税の扶養控除などを入力します。</p>
+              <p className="form-hint">住宅ローン控除は計算済みの控除額を入力します。「所得税のその他の税額控除」に含めていた金額は専用欄に移してください。</p>
+              {year === 2024 && (
+                <p className="form-hint" id="fixed-tax-reduction-hint">国内居住の同一生計配偶者と扶養親族（16歳未満を含む）の人数です。合計所得金額が1,805万円以下の場合は、本人分を自動で加えます。</p>
+              )}
             </fieldset>
             <fieldset className="form-group">
               <legend>ふるさと納税と住民税</legend>
@@ -730,7 +852,16 @@ function TaxForm({ tax, lastClosedSalesMonthSetting, lastClosedExpenseMonthSetti
                 <AmountField name="otherResidentDeductions" label="住民税のその他の所得控除" value={tax.otherResidentDeductions ?? DEFAULT_TAX_FORM_AMOUNTS.otherResidentDeductions} />
                 <AmountField name="residentPersonalDeductionDifference" label="基礎控除以外の人的控除差" value={tax.residentPersonalDeductionDifference} />
                 <AmountField name="residentAdjustmentDeduction" label="住民税の調整控除（任意）" value={tax.residentAdjustmentDeduction} />
+                <label className="form-field">
+                  <span>同一生計配偶者・扶養親族の人数（人）</span>
+                  <input type="number" name="residentDependentCount" defaultValue={tax.residentDependentCount ?? 0} min={0} step="1" inputMode="numeric" />
+                </label>
               </div>
+              <p className="form-hint">人数には16歳未満の扶養親族を含めます。人的控除差は、調整控除に使う法定の差額を入力します。</p>
+              <label className="check-field">
+                <input type="checkbox" name="residentPersonalExemption" defaultChecked={tax.residentPersonalExemption} />
+                本人が障害者・未成年者・寡婦・ひとり親に該当する
+              </label>
             </fieldset>
           </div>
         </details>
@@ -820,15 +951,14 @@ function MonthlyPlans({ plans, monthlyPlanMode, forecast, actions }: Pick<Dashbo
 }
 
 export function ForecastDashboard({
-  year, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedSalesMonth, lastClosedExpenseMonth, defaultClosedMonth, maxClosedMonth,
-  lastClosedMonthSetting, lastClosedSalesMonthSetting, lastClosedExpenseMonthSetting, connection, notice, actions,
+  year, years, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedSalesMonth, lastClosedExpenseMonth, defaultClosedMonth, maxClosedMonth,
+  lastClosedMonthSetting, lastClosedSalesMonthSetting, lastClosedExpenseMonthSetting, connection, notice, closedMonthsNotice, actions,
 }: DashboardProps) {
   const itemColors = getAccountItemColors(accountItems);
   const forecastBreakdown = summarizeAccountItems(forecast.months, accountItems);
   const needsSync = connection.accountItemsNeedSync;
   const individualCutoffs = lastClosedSalesMonthSetting !== null || lastClosedExpenseMonthSetting !== null;
-  const defaultCutoffLabel = defaultClosedMonth === 12 ? "自動（12月まで）"
-    : defaultClosedMonth === 0 ? "自動（締め済み月なし）" : `自動・前月（${defaultClosedMonth}月）`;
+  const selectedClosedMonth = Math.min(lastClosedMonthSetting ?? defaultClosedMonth, defaultClosedMonth);
   return (
     <div className="dashboard-shell">
       <header className="dashboard-topbar">
@@ -845,22 +975,39 @@ export function ForecastDashboard({
       </header>
       <main id="overview" className="dashboard-main">
         <header className="dashboard-header">
-          <p className="dashboard-period">{year}年1月〜12月</p>
-          <h1 className="dashboard-title">年間の収支と税金</h1>
+          <div>
+            <p className="dashboard-period">{year}年1月〜12月</p>
+            <h1 className="dashboard-title">年間の収支と税金</h1>
+          </div>
+          <form className="dashboard-year-switch" action="/" method="get" aria-label="表示する年を切り替え">
+            <label className="form-field">
+              <span>対象年</span>
+              <select name="year" defaultValue={year}>
+                {years.map((option) => <option key={option} value={option}>{option}年</option>)}
+              </select>
+            </label>
+            <button className="dashboard-button secondary" type="submit">切り替え</button>
+          </form>
         </header>
         {notice && <p className="dashboard-notice" role="status">{notice}</p>}
+        <ConnectionPanel connection={connection} lastClosedSalesMonth={lastClosedSalesMonth} lastClosedExpenseMonth={lastClosedExpenseMonth}
+          actions={actions} />
         <ActualSummary forecast={forecast} accountItems={accountItems} itemColors={itemColors} needsSync={needsSync} />
         <section id="summary" aria-labelledby="summary-heading">
           <div className="section-heading forecast-heading">
             <div className="section-title">
               <h2 id="summary-heading">年末の見込み</h2>
               <p>締め月までの月平均で、翌月以降の売上と経費を見積もります。</p>
-              <p>住民税は{year}年の所得をもとに、{year + 1}年1月1日時点で大分県別府市に住所がある場合を試算します。所得税と消費税には全国共通の税率を使います。</p>
+              {isTaxForecastYear(year) ? (
+                <p>住民税は{year}年の所得をもとに、{year + 1}年1月1日時点で大分県別府市に住所がある場合を試算します。所得税と消費税には全国共通の税率を使います。</p>
+              ) : (
+                <p>所得・税額の試算は{TAX_FORECAST_YEARS.join("・")}年分に対応しています。</p>
+              )}
             </div>
             <form action={actions.saveClosedMonth} className="forecast-cutoff">
               <div className="forecast-cutoff-controls">
-                <ClosedMonthField name="lastClosedMonth" label="締め済み最終月" value={lastClosedMonthSetting}
-                  fallbackLabel={defaultCutoffLabel} maxClosedMonth={defaultClosedMonth} />
+                <ClosedMonthField key={selectedClosedMonth} name="lastClosedMonth" label="締め済み最終月"
+                  value={selectedClosedMonth} maxClosedMonth={defaultClosedMonth} />
                 <button className="dashboard-button" type="submit">反映</button>
               </div>
               {individualCutoffs && (
@@ -885,17 +1032,17 @@ export function ForecastDashboard({
             <ConsumptionTaxCard forecast={forecast} />
           </div>
         </section>
-        <div className="dashboard-overview">
-          <MonthlyChart rows={forecast.months} accountItems={accountItems} itemColors={itemColors} />
-          <ConnectionPanel connection={connection} lastClosedSalesMonth={lastClosedSalesMonth} lastClosedExpenseMonth={lastClosedExpenseMonth}
-            actions={actions} />
-        </div>
+        <MonthlyChart rows={forecast.months} accountItems={accountItems} itemColors={itemColors} />
         <section id="settings" className="dashboard-settings" aria-labelledby="settings-heading">
           <div className="section-heading"><h2 id="settings-heading">予測の前提</h2></div>
           <div className="settings-grid">
-            <TaxForm tax={tax} lastClosedSalesMonthSetting={lastClosedSalesMonthSetting}
-              lastClosedExpenseMonthSetting={lastClosedExpenseMonthSetting} maxClosedMonth={maxClosedMonth} action={actions.saveTax} />
-            <MonthlyPlans plans={plans} monthlyPlanMode={monthlyPlanMode} forecast={forecast} actions={actions} />
+            <TaxForm tax={tax} year={year} action={actions.saveTax} />
+            <div className="settings-column">
+              <ClosedMonthSettings lastClosedSalesMonthSetting={lastClosedSalesMonthSetting}
+                lastClosedExpenseMonthSetting={lastClosedExpenseMonthSetting} maxClosedMonth={maxClosedMonth}
+                closedMonthsNotice={closedMonthsNotice} action={actions.saveIndividualClosedMonths} />
+              <MonthlyPlans plans={plans} monthlyPlanMode={monthlyPlanMode} forecast={forecast} actions={actions} />
+            </div>
           </div>
         </section>
       </main>

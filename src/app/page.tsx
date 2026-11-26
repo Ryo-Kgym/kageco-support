@@ -1,10 +1,11 @@
-import { logout, saveClosedMonth, savePlan, saveTax, setPlanMode } from "@/app/forecast-actions";
+import { logout, saveClosedMonth, saveIndividualClosedMonths, savePlan, saveTax, setPlanMode } from "@/app/forecast-actions";
 import { disconnectFreee, startFreee, syncFreee } from "@/app/freee-actions";
 import { ForecastDashboard } from "@/components/forecast-dashboard";
 import { APP_NAME } from "@/lib/app-name";
 import { getChartAccountItems } from "@/lib/chart-account-items";
-import { calculateForecast, FORECAST_YEAR } from "@/lib/forecast";
+import { calculateForecast } from "@/lib/forecast";
 import { canUseAccessToken, loadForecast } from "@/lib/forecast-store";
+import { forecastYears, selectedForecastYear } from "@/lib/forecast-year";
 import { freeeConfiguration } from "@/lib/freee-settings";
 import { authConfigured, currentSession, getSessionTokens } from "@/lib/security";
 
@@ -30,10 +31,12 @@ const notices: Record<string, string> = {
   "sync-limit": "freeeのリクエスト上限に達しました。時間をおいて再実行してください。",
   "sync-error": "同期できませんでした。前回の同期結果がある場合は引き続き表示します。",
   "invalid-input": "金額は円単位の整数で入力してください。",
+  "invalid-medical-expense-deduction": "医療費控除額は200万円以下を入力してください。",
   "invalid-closed-month": "締め済みの月は、月末まで取り込み済みの範囲から選択してください。",
   "invalid-summary-closed-month": "締め済み最終月は、前月までの範囲から選択してください。",
   "invalid-plan-month": "売上または支出が未締めの月を選択してください。",
   "closed-month-saved": "締め済み最終月を売上と経費に反映しました。",
+  "individual-closed-months-saved": "売上と経費の締め月を保存しました。",
   "tax-saved": "入力内容を年末の見込みに反映しました。",
   "plan-saved": "月ごとの見込みを保存しました。",
   "plan-mode-trend": "推移モードに切り替えました。",
@@ -44,8 +47,11 @@ const notices: Record<string, string> = {
 type Search = Promise<Record<string, string | string[] | undefined>>;
 
 export default async function Home({ searchParams }: { searchParams: Search }) {
-  const { notice } = await searchParams;
+  const { notice, year: yearParam } = await searchParams;
+  const years = forecastYears();
+  const year = selectedForecastYear(yearParam, years);
   const message = typeof notice === "string" && Object.hasOwn(notices, notice) ? notices[notice] : undefined;
+  const closedMonthsNotice = notice === "individual-closed-months-saved" || notice === "invalid-closed-month" ? message : undefined;
   const session = await currentSession();
   const { settings, issues } = freeeConfiguration();
   const sessionConfigured = authConfigured();
@@ -83,17 +89,19 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
     );
   }
 
-  const [data, tokens] = await Promise.all([loadForecast(session), getSessionTokens(session)]);
+  const [data, tokens] = await Promise.all([loadForecast(session, year), getSessionTokens(session)]);
   const forecast = calculateForecast({
     ...data,
-    year: FORECAST_YEAR,
+    year,
     plans: data.monthlyPlanMode === "manual" ? data.plans : undefined,
     tax: data.consumptionMethodConfirmed ? data.tax : { ...data.tax, consumptionMethod: undefined },
   });
 
   return (
     <ForecastDashboard
-      year={FORECAST_YEAR}
+      key={year}
+      year={year}
+      years={years}
       forecast={forecast}
       accountItems={getChartAccountItems(forecast.months, data.actuals)}
       tax={data.tax}
@@ -116,15 +124,17 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
         accountItemsNeedSync: data.actuals.some((row) => row.sales !== null && row.expenses !== null && !row.accountItems),
         status: data.tax.consumptionMethod && !data.consumptionMethodConfirmed ? "取り込んだ消費税の申告方式を確認し、「年末の見込みを計算」を押してください。" : null,
       }}
-      notice={message}
+      notice={closedMonthsNotice === undefined ? message : undefined}
+      closedMonthsNotice={closedMonthsNotice}
       actions={{
         startFreee,
         disconnectFreee,
-        sync: syncFreee,
-        saveClosedMonth,
-        saveTax,
-        savePlan,
-        setPlanMode,
+        sync: syncFreee.bind(null, year),
+        saveClosedMonth: saveClosedMonth.bind(null, year),
+        saveIndividualClosedMonths: saveIndividualClosedMonths.bind(null, year),
+        saveTax: saveTax.bind(null, year),
+        savePlan: savePlan.bind(null, year),
+        setPlanMode: setPlanMode.bind(null, year),
         logout,
       }}
     />
