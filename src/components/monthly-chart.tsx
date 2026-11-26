@@ -244,7 +244,7 @@ export function MonthlyChart({ rows, accountItems, itemColors }: {
           </div>
         </>
       ) : (
-        <div className="chart-empty"><p>freeeから同期するか、月ごとの見込みを入力してください。</p></div>
+        <p className="chart-empty">表示する月次データがありません。</p>
       )}
       <details className="monthly-detail">
         <summary>月別の金額と勘定科目を表示</summary>

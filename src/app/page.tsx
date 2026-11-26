@@ -16,7 +16,7 @@ const notices: Record<string, string> = {
   "oauth-cancelled": "freeeでのログインをキャンセルしました。",
   "company-required": "freeeで対象の事業所を選択して接続してください。",
   "individual-required": "個人事業主として登録された事業所を選択してください。",
-  connected: "freeeでログインしました。「freeeから同期」で実績を取り込めます。",
+  connected: "freeeでログインしました。",
   disconnected: "freeeとの接続を解除し、ログアウトしました。",
   "disconnect-unconfirmed": "ログアウトしました。freee側で認可が無効になったかは確認できませんでした。",
   "logged-out": "ログアウトしました。",

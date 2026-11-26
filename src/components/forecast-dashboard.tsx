@@ -253,7 +253,7 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
     <section className="dashboard-panel" aria-labelledby="tax-heading">
       <header className="panel-heading">
         <h2 id="tax-heading">年の前提と税金</h2>
-        <p>入力した金額と締め済みの実績で年末の見込みを計算します。該当しない金額には0円を入力してください。</p>
+        <p>該当しない金額には0円を入力してください。</p>
       </header>
       <form action={action} className="editable-form">
         <fieldset className="form-group">
@@ -310,7 +310,6 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
         <details className="tax-form-details" suppressHydrationWarning>
           <summary>詳細設定</summary>
           <div className="tax-form-details-content">
-            <p className="form-hint">所得税・住民税のその他の所得控除、所得税の税額控除、寄附予定額は0円が初期値です。</p>
             <fieldset className="form-group">
               <legend>集計期間</legend>
               <div className="field-grid">
@@ -342,12 +341,10 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
                 <AmountField name="residentPersonalDeductionDifference" label="基礎控除以外の人的控除差" value={tax.residentPersonalDeductionDifference} />
                 <AmountField name="residentAdjustmentDeduction" label="住民税の調整控除（任意）" value={tax.residentAdjustmentDeduction} />
               </div>
-              <p className="form-hint">控除の入力には給与明細や住民税の通知書を参照できます。</p>
             </fieldset>
           </div>
         </details>
         <div className="form-footer">
-          <p className="form-hint">入力はこのログインセッションのメモリに保持します。</p>
           <button className="dashboard-button" type="submit">年末の見込みを計算</button>
         </div>
       </form>
@@ -426,31 +423,6 @@ function MonthlyPlans({ plans, monthlyPlanMode, forecast, actions }: Pick<Dashbo
   );
 }
 
-function ForecastGuidance({ missing, synced }: { missing: ForecastResult["missing"]; synced: boolean }) {
-  const { incomeTaxSettlement, ...annualMissing } = missing;
-  const reasons = [...new Set(Object.values(annualMissing).flat())];
-  const needsMonthlyAmounts = reasons.some((reason) => reason.endsWith("月）"));
-  const needsTaxInputs = reasons.some((reason) => !reason.endsWith("月）"));
-  const settlementReasons = incomeTaxSettlement.filter((reason) => !missing.incomeTax.includes(reason));
-  if (synced && reasons.length === 0 && settlementReasons.length === 0) return null;
-
-  return (
-    <div className="forecast-guidance">
-      {!synced && <p>事業の実績は<a href="#freee">freee連携</a>から取り込めます。</p>}
-      {reasons.length > 0 && (
-        <>
-          <p><strong>未算出の理由</strong>　{reasons.join("、")}</p>
-          {needsMonthlyAmounts && <p>対象月の実績は<a href="#freee">freee連携</a>で確認できます。未締め月は<a href="#monthly-plans">月ごとの見込み</a>で手入力できます。</p>}
-          {needsTaxInputs && <p><a href="#settings">予測の前提</a>を入力し、「年末の見込みを計算」を押すと反映されます。</p>}
-        </>
-      )}
-      {settlementReasons.length > 0 && (
-        <p><strong>追加納付・還付（任意）</strong>　{settlementReasons.join("、")}は<a href="#settings">年の前提と税金</a>の詳細設定で入力できます。</p>
-      )}
-    </div>
-  );
-}
-
 export function ForecastDashboard({
   year, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions,
 }: DashboardProps) {
@@ -475,9 +447,6 @@ export function ForecastDashboard({
         <header className="dashboard-header">
           <p className="dashboard-period">{year}年1月〜12月</p>
           <h1 className="dashboard-title">年間の収支と税金</h1>
-          <p className="dashboard-intro">{connection.syncedAt
-            ? "取り込み済みの実績を使います。給与・控除などを入力したら「年末の見込みを計算」を押してください。"
-            : "freeeから実績を同期し、給与・控除などを入力して「年末の見込みを計算」を押してください。"}</p>
         </header>
         {notice && <p className="dashboard-notice" role="status">{notice}</p>}
         <ActualSummary forecast={forecast} accountItems={accountItems} itemColors={itemColors} needsSync={needsSync} />
@@ -509,7 +478,6 @@ export function ForecastDashboard({
             ]} />
             <MetricCard title="消費税" amount={forecast.consumptionTax === null ? null : Math.abs(forecast.consumptionTax)} caption={forecast.consumptionTax != null && forecast.consumptionTax < 0 ? "消費税・地方消費税の還付" : "消費税・地方消費税の納付額"} />
           </div>
-          <ForecastGuidance missing={forecast.missing} synced={connection.syncedAt !== null} />
         </section>
         <div className="dashboard-overview">
           <MonthlyChart rows={forecast.months} accountItems={accountItems} itemColors={itemColors} />
