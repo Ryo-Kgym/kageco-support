@@ -22,5 +22,5 @@ test("freee connection requires both server environment variables", (t) => {
     clientSecret: "test-secret",
     redirectUri: "http://127.0.0.1:3000/freee/callback",
   });
-  assert.equal(localFreeeCallbackUrl(), null);
+  assert.equal(localFreeeCallbackUrl(), "http://127.0.0.1:3000/freee/callback");
 });

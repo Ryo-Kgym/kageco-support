@@ -34,7 +34,6 @@ type DashboardProps = {
     setPlanMode: FormAction;
     logout: FormAction;
   };
-  canLogout: boolean;
 };
 
 const months = Array.from({ length: 12 }, (_, index) => index + 1);
@@ -179,9 +178,9 @@ function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<Dashboar
   const { connected, configured, localSetup, syncedAt, canSync } = connection;
   const connectionLabel = connected ? "接続済み" : "未接続";
   const syncTime = syncedAt ? timeFormat.format(new Date(syncedAt)) : "未同期";
-  const hasRetainedActuals = Boolean(syncedAt) && !connected;
-  const needsSetup = connected && !canSync;
-  const hasMessages = hasRetainedActuals || needsSetup || connection.accountItemsNeedSync || Boolean(connection.status);
+  const needsLogin = connected && configured && !canSync;
+  const needsSetup = connected && !configured && !canSync;
+  const hasMessages = needsLogin || needsSetup || connection.accountItemsNeedSync || Boolean(connection.status);
 
   return (
     <section className="dashboard-panel connection-panel" id="freee" aria-labelledby="connection-heading">
@@ -201,20 +200,21 @@ function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<Dashboar
               <button className="dashboard-button" type="submit">freeeから同期</button>
             </form>
           )}
-          {connected ? (
-            <form action={actions.disconnectFreee}>
-              <button className={`dashboard-button${canSync ? " secondary" : ""}`} type="submit">接続を解除</button>
-            </form>
-          ) : (
+          {configured && !canSync && (
             <form action={actions.startFreee}>
-              <button className="dashboard-button" type="submit">freeeに接続</button>
+              <button className="dashboard-button" type="submit">{connected ? "freeeで再ログイン" : "freeeでログイン"}</button>
+            </form>
+          )}
+          {connected && (
+            <form action={actions.disconnectFreee}>
+              <button className={`dashboard-button${canSync || needsLogin ? " secondary" : ""}`} type="submit">接続を解除</button>
             </form>
           )}
         </div>
       )}
       {hasMessages && (
         <div className="connection-messages">
-          {hasRetainedActuals && <p className="connection-message">取り込み済みの実績で見込みを計算できます。</p>}
+          {needsLogin && <p className="connection-message">同期するにはfreeeで再ログインし、実績を取り込んでください。</p>}
           {needsSetup && (
             <p className="connection-message">
               {syncedAt ? "取り込み済みの実績で見込みを計算できます。再同期には" : "実績を同期するには"}
@@ -347,7 +347,7 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
           </div>
         </details>
         <div className="form-footer">
-          <p className="form-hint">入力はサーバー起動中だけ保持します。</p>
+          <p className="form-hint">入力はこのログインセッションのメモリに保持します。</p>
           <button className="dashboard-button" type="submit">年末の見込みを計算</button>
         </div>
       </form>
@@ -452,7 +452,7 @@ function ForecastGuidance({ missing, synced }: { missing: ForecastResult["missin
 }
 
 export function ForecastDashboard({
-  year, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions, canLogout,
+  year, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions,
 }: DashboardProps) {
   const itemColors = getAccountItemColors(accountItems);
   const forecastBreakdown = summarizeAccountItems(forecast.months, accountItems);
@@ -468,7 +468,7 @@ export function ForecastDashboard({
             <a href="#settings">予測の前提</a>
             <a href="#freee">freee連携</a>
           </nav>
-          {canLogout && <form className="topbar-session" action={actions.logout}><button type="submit" className="dashboard-button secondary">ログアウト</button></form>}
+          <form className="topbar-session" action={actions.logout}><button type="submit" className="dashboard-button secondary">ログアウト</button></form>
         </div>
       </header>
       <main id="overview" className="dashboard-main">

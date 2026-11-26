@@ -27,7 +27,7 @@ function configuredOrigin() {
 
 export function localFreeeCallbackUrl() {
   const origin = configuredOrigin();
-  if (process.env.NODE_ENV !== "development" || !origin || !loopback(origin) || environmentCredentials()) return null;
+  if (process.env.NODE_ENV !== "development" || !origin || !loopback(origin)) return null;
   return `${origin.origin}/freee/callback`;
 }
 

@@ -1,13 +1,11 @@
 import { redirect } from "next/navigation";
 import { localFreeeCallbackUrl } from "@/lib/freee-settings";
-import { requireSession } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
 export default async function FreeeSetup() {
-  await requireSession();
   const callbackUrl = localFreeeCallbackUrl();
-  if (!callbackUrl) redirect("/#freee");
+  if (!callbackUrl) redirect("/");
 
   return (
     <main className="dashboard-login">
@@ -24,10 +22,11 @@ export default async function FreeeSetup() {
         <ul>
           <li><code>FREEE_CLIENT_ID</code> にClient ID</li>
           <li><code>FREEE_CLIENT_SECRET</code> にClient Secret</li>
+          <li><code>SESSION_SECRET</code> に32バイトのランダムな値をbase64urlで設定</li>
         </ul>
-        <p>設定後、ダッシュボードで「freeeに接続」を押します。設定が反映されない場合は開発サーバーを再起動します。</p>
+        <p>設定後、ログイン画面で「freeeでログイン」を押します。設定が反映されない場合は開発サーバーを再起動します。</p>
         <div className="form-footer">
-          <a className="dashboard-button secondary" href="/#freee">ダッシュボードに戻る</a>
+          <a className="dashboard-button secondary" href="/">ログイン画面に戻る</a>
         </div>
       </section>
     </main>

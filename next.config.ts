@@ -8,7 +8,8 @@ const config: NextConfig = {
   async headers() {
     return [{
       source: "/freee/callback",
-      headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      // Keep OAuth query parameters out of referrers while retaining Origin for the Server Action POST.
+      headers: [{ key: "Referrer-Policy", value: "strict-origin" }],
     }];
   },
 };
