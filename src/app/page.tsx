@@ -29,7 +29,7 @@ const notices: Record<string, string> = {
   "invalid-input": "金額は円単位の整数で入力してください。",
   "invalid-closed-month": "締め済みの月は、月末まで取り込み済みの範囲から選択してください。",
   "invalid-plan-month": "締め済みより後の月を選択してください。",
-  "tax-saved": "年の前提を保存しました。",
+  "tax-saved": "入力内容を年末の見込みに反映しました。",
   "plan-saved": "月ごとの見込みを保存しました。",
   "plan-mode-trend": "推移モードに切り替えました。",
   "plan-mode-manual": "手入力に切り替えました。",

@@ -48,6 +48,48 @@ function settlement(amount: number | null) {
   return amount > 0 ? `追加納付 ${yen(amount)}` : "0円";
 }
 
+function closedActualAmount(months: ForecastResult["months"], key: "sales" | "expenses"): number | null {
+  if (months.length === 0) return null;
+  let total = 0;
+  for (const { actual } of months) {
+    const amount = actual[key];
+    if (amount === null) return null;
+    total += amount;
+  }
+  return total;
+}
+
+function ActualSummary({ forecast }: { forecast: ForecastResult }) {
+  const closedMonths = forecast.months.filter(({ closed }) => closed);
+  const lastMonth = closedMonths.at(-1)?.month ?? 0;
+  const sales = closedActualAmount(closedMonths, "sales");
+  const expenses = closedActualAmount(closedMonths, "expenses");
+  const profit = sales === null || expenses === null ? null : sales - expenses;
+  const amounts = [
+    { label: "事業売上", amount: sales, missing: "未集計" },
+    { label: "事業経費", amount: expenses, missing: "未集計" },
+    { label: "事業利益", amount: profit, missing: "未集計" },
+    { label: "寄附済額（入力値）", amount: forecast.donationsPaid, missing: "未入力" },
+  ];
+
+  return (
+    <section className="actual-summary" aria-labelledby="actual-summary-heading">
+      <div className="section-heading">
+        <h2 id="actual-summary-heading">締め済みの実績</h2>
+        <p>{lastMonth === 0 ? "締め済み月なし" : lastMonth === 1 ? "1月の事業収支" : `1月〜${lastMonth}月の事業収支`}</p>
+      </div>
+      <dl className="actual-totals">
+        {amounts.map(({ label, amount, missing }) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd className={amount === null ? "unavailable" : undefined}>{amount === null ? missing : yen(amount)}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
 function MetricCard({
   title,
   amount,
@@ -228,7 +270,7 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
     <section className="dashboard-panel" aria-labelledby="tax-heading">
       <header className="panel-heading">
         <h2 id="tax-heading">年の前提と税金</h2>
-        <p>金額は円で入力し、該当しない項目には0円を入れます。入力はサーバー起動中だけ保持します。</p>
+        <p>入力した金額と締め済みの実績で年末の見込みを計算します。該当しない金額には0円を入力してください。</p>
       </header>
       <form action={action} className="editable-form">
         <fieldset className="form-group">
@@ -321,7 +363,10 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
             </fieldset>
           </div>
         </details>
-        <div className="form-footer"><button className="dashboard-button" type="submit">年の前提を保存</button></div>
+        <div className="form-footer">
+          <p className="form-hint">入力はサーバー起動中だけ保持します。</p>
+          <button className="dashboard-button" type="submit">年末の見込みを計算</button>
+        </div>
       </form>
     </section>
   );
@@ -398,27 +443,28 @@ function MonthlyPlans({ plans, monthlyPlanMode, forecast, actions }: Pick<Dashbo
   );
 }
 
-const missingLabels: Record<keyof ForecastResult["missing"], string> = {
-  sales: "事業売上",
-  expenses: "事業経費",
-  incomeTax: "所得税",
-  incomeTaxSettlement: "追加納付・還付",
-  donationLimit: "ふるさと納税の上限",
-  donationRemaining: "ふるさと納税の残り枠",
-  consumptionTax: "消費税",
-};
-
-function MissingInputs({ missing }: { missing: ForecastResult["missing"] }) {
-  const keys = (Object.keys(missingLabels) as Array<keyof typeof missingLabels>).filter((key) => missing[key].length > 0);
-  if (keys.length === 0) return null;
+function ForecastGuidance({ missing, synced }: { missing: ForecastResult["missing"]; synced: boolean }) {
+  const { incomeTaxSettlement, ...annualMissing } = missing;
+  const reasons = [...new Set(Object.values(annualMissing).flat())];
+  const needsMonthlyAmounts = reasons.some((reason) => reason.endsWith("月）"));
+  const needsTaxInputs = reasons.some((reason) => !reason.endsWith("月）"));
+  const settlementReasons = incomeTaxSettlement.filter((reason) => !missing.incomeTax.includes(reason));
+  if (synced && reasons.length === 0 && settlementReasons.length === 0) return null;
 
   return (
-    <details className="monthly-detail missing-detail">
-      <summary>予測に必要な入力を表示</summary>
-      <ul>
-        {keys.map((key) => <li key={key}><strong>{missingLabels[key]}</strong>　{missing[key].join("、")}</li>)}
-      </ul>
-    </details>
+    <div className="forecast-guidance">
+      {!synced && <p>事業の実績は<a href="#freee">freee連携</a>から取り込めます。</p>}
+      {reasons.length > 0 && (
+        <>
+          <p><strong>未算出の理由</strong>　{reasons.join("、")}</p>
+          {needsMonthlyAmounts && <p>対象月の実績は<a href="#freee">freee連携</a>で確認できます。未締め月は<a href="#monthly-plans">月ごとの見込み</a>で手入力できます。</p>}
+          {needsTaxInputs && <p><a href="#settings">予測の前提</a>を入力し、「年末の見込みを計算」を押すと反映されます。</p>}
+        </>
+      )}
+      {settlementReasons.length > 0 && (
+        <p><strong>追加納付・還付（任意）</strong>　{settlementReasons.join("、")}は<a href="#settings">年の前提と税金</a>の詳細設定で入力できます。</p>
+      )}
+    </div>
   );
 }
 
@@ -444,13 +490,16 @@ export function ForecastDashboard({
         <header className="dashboard-header">
           <p className="dashboard-period">{year}年1月〜12月</p>
           <h1 className="dashboard-title">年間の収支と税金</h1>
-          <p className="dashboard-intro">freee会計の実績と入力した前提から、年末の金額を見積もります。</p>
+          <p className="dashboard-intro">{connection.syncedAt
+            ? "取り込み済みの実績を使います。給与・控除などを入力したら「年末の見込みを計算」を押してください。"
+            : "freeeから実績を同期し、給与・控除などを入力して「年末の見込みを計算」を押してください。"}</p>
         </header>
         {notice && <p className="dashboard-notice" role="status">{notice}</p>}
+        <ActualSummary forecast={forecast} />
         <section aria-labelledby="summary-heading">
           <div className="section-heading">
             <h2 id="summary-heading">年末の見込み</h2>
-            <p>締め済みの実績＋残りの月の見込み</p>
+            <p>締め済みの実績と未締め月の見込みから試算</p>
           </div>
           <div className="metrics-grid">
             <MetricCard title="年収・事業売上" amount={forecast.sales} caption="事業売上の年額" highlighted details={[
@@ -460,15 +509,14 @@ export function ForecastDashboard({
             <MetricCard title="支出" amount={forecast.expenses} caption="事業経費の年額" />
             <MetricCard title="ふるさと納税" amount={forecast.donationLimit} caption="寄附上限の目安" details={[
               { label: "残り枠", value: yen(forecast.donationRemaining) },
-              { label: "寄附済み", value: yen(forecast.donationsPaid) },
               { label: "寄附予定", value: yen(forecast.donationsPlanned) },
             ]} />
             <MetricCard title="所得税" amount={forecast.incomeTax} caption="復興特別所得税を含む年税額" details={[
-              { label: "精算見込み", value: settlement(forecast.incomeTaxSettlement) },
+              { label: "追加納付・還付", value: settlement(forecast.incomeTaxSettlement) },
             ]} />
             <MetricCard title="消費税" amount={forecast.consumptionTax === null ? null : Math.abs(forecast.consumptionTax)} caption={forecast.consumptionTax != null && forecast.consumptionTax < 0 ? "消費税・地方消費税の還付" : "消費税・地方消費税の納付額"} />
           </div>
-          <MissingInputs missing={forecast.missing} />
+          <ForecastGuidance missing={forecast.missing} synced={connection.syncedAt !== null} />
         </section>
         <div className="dashboard-overview">
           <MonthlyChart forecast={forecast} />

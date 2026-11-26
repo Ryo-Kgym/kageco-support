@@ -53,7 +53,7 @@ export async function saveTax(form: FormData) {
   if ([0.4, 0.5, 0.6, 0.7, 0.8, 0.9].includes(rate)) tax.simplifiedPurchaseRate = rate;
   tax.twoTenthsEligible = form.get("twoTenthsEligible") === "on";
   await savePreferences(tax, month);
-  redirect("/?notice=tax-saved#settings");
+  redirect("/?notice=tax-saved#overview");
 }
 
 export async function savePlan(form: FormData) {
