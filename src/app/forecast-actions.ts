@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { DEFAULT_TAX_FORM_AMOUNTS, type MonthAmounts, type TaxInputs } from "@/lib/forecast";
 import { loadForecast, saveMonthlyPlan, saveMonthlyPlanMode, savePreferences } from "@/lib/forecast-store";
-import { getMode, requireSession, signIn, signOut, switchMode } from "@/lib/security";
+import { requireSession, signIn, signOut } from "@/lib/security";
 
 const taxMoneyFields = [
   "salaryGross", "blueDeduction", "socialInsurance", "otherIncomeDeductions", "otherResidentDeductions",
@@ -35,18 +35,10 @@ export async function logout(_form: FormData) {
   redirect("/");
 }
 
-export async function setDemo(form: FormData) {
+export async function saveTax(form: FormData) {
   await requireSession();
-  const mode = form.get("mode");
-  if (mode === "real" || mode === "demo") await switchMode(mode);
-  redirect("/");
-}
-
-export async function saveTax(mode: "real" | "demo", form: FormData) {
-  await requireSession();
-  if (mode !== await getMode()) redirect("/?notice=mode-changed#settings");
   const month = integer(form, "lastClosedMonth");
-  const { maxClosedMonth } = await loadForecast(mode);
+  const { maxClosedMonth } = await loadForecast();
   if (month !== null && month > maxClosedMonth) redirect("/?notice=invalid-closed-month#settings");
 
   const tax: TaxInputs = {};
@@ -60,28 +52,26 @@ export async function saveTax(mode: "real" | "demo", form: FormData) {
   const rate = Number(form.get("simplifiedPurchaseRate"));
   if ([0.4, 0.5, 0.6, 0.7, 0.8, 0.9].includes(rate)) tax.simplifiedPurchaseRate = rate;
   tax.twoTenthsEligible = form.get("twoTenthsEligible") === "on";
-  await savePreferences(mode, tax, month);
+  await savePreferences(tax, month);
   redirect("/?notice=tax-saved#settings");
 }
 
-export async function savePlan(mode: "real" | "demo", form: FormData) {
+export async function savePlan(form: FormData) {
   await requireSession();
-  if (mode !== await getMode()) redirect("/?notice=mode-changed#monthly-plans");
   const month = integer(form, "month");
-  const { lastClosedMonth, monthlyPlanMode } = await loadForecast(mode);
+  const { lastClosedMonth, monthlyPlanMode } = await loadForecast();
   if (monthlyPlanMode !== "manual") redirect("/?notice=manual-plan-required#monthly-plans");
   if (month === null || month <= lastClosedMonth || month < 1 || month > 12) redirect("/?notice=invalid-plan-month#monthly-plans");
   const plan: MonthAmounts = { month };
   for (const key of planFields) plan[key] = integer(form, key, true);
-  await saveMonthlyPlan(mode, month, planFields.some((key) => plan[key] !== null) ? plan : null);
+  await saveMonthlyPlan(month, planFields.some((key) => plan[key] !== null) ? plan : null);
   redirect("/?notice=plan-saved#monthly-plans");
 }
 
-export async function setPlanMode(mode: "real" | "demo", form: FormData) {
+export async function setPlanMode(form: FormData) {
   await requireSession();
-  if (mode !== await getMode()) redirect("/?notice=mode-changed#monthly-plans");
   const selection = form.get("monthlyPlanMode");
   if (selection !== "trend" && selection !== "manual") redirect("/#monthly-plans");
-  await saveMonthlyPlanMode(mode, selection);
+  await saveMonthlyPlanMode(selection);
   redirect(`/?notice=plan-mode-${selection}#monthly-plans`);
 }

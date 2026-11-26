@@ -4,7 +4,6 @@ import { DEFAULT_TAX_FORM_AMOUNTS, type ForecastResult, type MonthAmounts, type 
 type FormAction = (formData: FormData) => Promise<void>;
 type DashboardProps = {
   year: number;
-  isDemo: boolean;
   forecast: ForecastResult;
   tax: TaxInputs;
   plans: MonthAmounts[];
@@ -26,7 +25,6 @@ type DashboardProps = {
     saveTax: FormAction;
     savePlan: FormAction;
     setPlanMode: FormAction;
-    setDemo: FormAction;
     logout: FormAction;
   };
   canLogout: boolean;
@@ -166,7 +164,7 @@ function MonthlyChart({ forecast: { months: rows } }: { forecast: ForecastResult
   );
 }
 
-function ConnectionPanel({ connection, lastClosedMonth, actions, isDemo }: Pick<DashboardProps, "connection" | "lastClosedMonth" | "actions" | "isDemo">) {
+function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<DashboardProps, "connection" | "lastClosedMonth" | "actions">) {
   const connected = connection.companyName !== null;
   const connectionLabel = !connection.configured ? "接続設定が必要" : connected ? "接続済み" : "未接続";
   const syncTime = connection.syncedAt ? timeFormat.format(new Date(connection.syncedAt)) : "未同期";
@@ -183,7 +181,7 @@ function ConnectionPanel({ connection, lastClosedMonth, actions, isDemo }: Pick<
         <div><dt>締め済み実績</dt><dd>{lastClosedMonth === 0 ? "未指定" : `${lastClosedMonth}月まで`}</dd></div>
       </dl>
       {connection.status && <p className="connection-message">{connection.status}</p>}
-      {connection.configured && !isDemo && (
+      {connection.configured && (
         <div className="connection-actions">
           {connected && (
             <form action={actions.sync}>
@@ -200,13 +198,6 @@ function ConnectionPanel({ connection, lastClosedMonth, actions, isDemo }: Pick<
       {!connection.configured && connection.localSetup && (
         <div className="connection-actions">
           <a className="dashboard-button" href="/freee/setup">接続設定の手順を見る</a>
-        </div>
-      )}
-      {isDemo && connection.configured && (
-        <div className="connection-actions">
-          <form action={actions.startFreee}>
-            <button className="dashboard-button" type="submit">実データを接続</button>
-          </form>
         </div>
       )}
     </section>
@@ -432,7 +423,7 @@ function MissingInputs({ missing }: { missing: ForecastResult["missing"] }) {
 }
 
 export function ForecastDashboard({
-  year, isDemo, forecast, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions, canLogout,
+  year, forecast, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions, canLogout,
 }: DashboardProps) {
   return (
     <div className="dashboard-shell">
@@ -451,21 +442,10 @@ export function ForecastDashboard({
       </aside>
       <main id="overview" className="dashboard-main">
         <header className="dashboard-header">
-          <div>
-            <p className="dashboard-period">{year}年1月〜12月</p>
-            <h1 className="dashboard-title">年間の収支と税金</h1>
-            <p className="dashboard-intro">freee会計の実績と入力した前提から、年末の金額を見積もります。</p>
-          </div>
-          <div className="dashboard-actions">
-            <form action={actions.setDemo}>
-              <button className="dashboard-button secondary" type="submit" name="mode" value={isDemo ? "real" : "demo"}>
-                {isDemo ? "実データに戻る" : "サンプルを見る"}
-              </button>
-            </form>
-            <a className="dashboard-button" href="#settings">予測の前提を入力</a>
-          </div>
+          <p className="dashboard-period">{year}年1月〜12月</p>
+          <h1 className="dashboard-title">年間の収支と税金</h1>
+          <p className="dashboard-intro">freee会計の実績と入力した前提から、年末の金額を見積もります。</p>
         </header>
-        {isDemo && <p className="dashboard-notice">サンプルデータを表示しています。入力した前提はサンプル表示に反映されます。</p>}
         {notice && <p className="dashboard-notice" role="status">{notice}</p>}
         <section aria-labelledby="summary-heading">
           <div className="section-heading">
@@ -492,7 +472,7 @@ export function ForecastDashboard({
         </section>
         <div className="dashboard-overview">
           <MonthlyChart forecast={forecast} />
-          <ConnectionPanel connection={connection} lastClosedMonth={lastClosedMonth} actions={actions} isDemo={isDemo} />
+          <ConnectionPanel connection={connection} lastClosedMonth={lastClosedMonth} actions={actions} />
         </div>
         <section id="settings" className="dashboard-settings" aria-labelledby="settings-heading">
           <div className="section-heading"><h2 id="settings-heading">予測の前提</h2></div>

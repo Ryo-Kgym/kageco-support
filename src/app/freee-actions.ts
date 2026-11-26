@@ -6,7 +6,7 @@ import { FORECAST_YEAR } from "@/lib/forecast";
 import { FREEE_ISSUER, FreeeApiError, exchangeFreeeCode, freeeAuthorizationUrl, getFreeeCompany, refreshFreeeTokens, syncFreeeAccounting } from "@/lib/freee";
 import { activeTokens, beginSync, connectionDetails, consumeOAuthAttempt, currentForecastDate, finishSync, saveConnection, saveOAuthAttempt } from "@/lib/forecast-store";
 import { freeeSettings, localFreeeCallbackUrl } from "@/lib/freee-settings";
-import { getMode, requireSession, switchMode } from "@/lib/security";
+import { requireSession } from "@/lib/security";
 
 function returnHome(notice: string): never {
   redirect(`/?notice=${notice}#freee`);
@@ -19,7 +19,6 @@ export async function startFreee(_data: FormData) {
     if (localFreeeCallbackUrl()) redirect("/freee/setup");
     returnHome("not-configured");
   }
-  if (await getMode() === "demo") await switchMode("real");
   const state = randomBytes(32).toString("base64url");
   await saveOAuthAttempt(state, session);
   redirect(freeeAuthorizationUrl({ ...settings, state }));
@@ -28,7 +27,7 @@ export async function startFreee(_data: FormData) {
 export async function completeFreee(form: FormData) {
   const session = await requireSession();
   const settings = freeeSettings();
-  if (!settings || (await getMode()) !== "real") returnHome("not-configured");
+  if (!settings) returnHome("not-configured");
   const code = form.get("code");
   const state = form.get("state");
   const issuer = form.get("iss");
@@ -58,7 +57,7 @@ export async function completeFreee(form: FormData) {
 export async function syncFreee(_data: FormData) {
   await requireSession();
   const settings = freeeSettings();
-  if (!settings || (await getMode()) !== "real") returnHome("not-configured");
+  if (!settings) returnHome("not-configured");
   const connection = await connectionDetails();
   if (!connection) returnHome("company-required");
   const date = currentForecastDate();
