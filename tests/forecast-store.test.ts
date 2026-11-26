@@ -1,9 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  beginSync, connectionDetails, consumeOAuthAttempt, disconnectConnection, finishSync,
+  activeTokens, beginSync, connectionDetails, consumeOAuthAttempt, disconnectConnection, finishSync,
   loadForecast, saveConnection, saveMonthlyPlan, saveMonthlyPlanMode, saveOAuthAttempt,
 } from "../src/lib/forecast-store";
+
+test("can sync with an existing access token while it has time for the sync to complete", async () => {
+  const companyId = 123;
+  const companyName = "テスト事業所";
+  const session = "token-test-session";
+  await saveOAuthAttempt("token-test", session);
+  const generation = await consumeOAuthAttempt("token-test", session);
+  assert.ok(generation !== null);
+  const expiresSoon = { accessToken: "test-access", refreshToken: "test-refresh", expiresAt: Date.now() + 30_000, companyId };
+  assert.equal(await saveConnection(companyId, companyName, expiresSoon, generation), "connected");
+  const connection = await connectionDetails();
+  assert.ok(connection);
+  assert.equal((await loadForecast()).canSyncWithoutRefresh, false);
+
+  const usable = { ...expiresSoon, expiresAt: Date.now() + 3_600_000 };
+  assert.equal(await activeTokens(connection.version, async () => usable), usable);
+  assert.equal((await loadForecast()).canSyncWithoutRefresh, true);
+  assert.equal(await activeTokens(connection.version, async () => {
+    assert.fail("a usable access token should not be refreshed");
+  }), usable);
+
+  await disconnectConnection();
+  assert.equal((await loadForecast()).canSyncWithoutRefresh, false);
+});
 
 test("monthly forecast modes start at trend and retain manual amounts across switches", async () => {
   const initial = await loadForecast();

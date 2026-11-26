@@ -12,6 +12,8 @@ function returnHome(notice: string): never {
   redirect(`/?notice=${notice}#freee`);
 }
 
+class FreeeSettingsRequiredError extends Error {}
+
 export async function startFreee(_data: FormData) {
   const session = await requireSession();
   const settings = freeeSettings();
@@ -66,9 +68,8 @@ export async function disconnectFreee(_data: FormData) {
 export async function syncFreee(_data: FormData) {
   await requireSession();
   const settings = freeeSettings();
-  if (!settings) returnHome("not-configured");
   const connection = await connectionDetails();
-  if (!connection) returnHome("company-required");
+  if (!connection) returnHome(settings ? "company-required" : "not-configured");
   const date = currentForecastDate();
   if (!date.throughMonth) returnHome("before-year");
   const id = await beginSync(connection.version);
@@ -76,9 +77,10 @@ export async function syncFreee(_data: FormData) {
 
   let outcome: string;
   try {
-    const tokens = await activeTokens(connection.version, (current) => refreshFreeeTokens({
-      ...settings, refreshToken: current.refreshToken,
-    }));
+    const tokens = await activeTokens(connection.version, (current) => {
+      if (!settings) throw new FreeeSettingsRequiredError();
+      return refreshFreeeTokens({ ...settings, refreshToken: current.refreshToken });
+    });
     const deadline = AbortSignal.timeout(90_000);
     const snapshot = await syncFreeeAccounting({
       accessToken: tokens.accessToken, companyId: Number(connection.company_id), year: FORECAST_YEAR,
@@ -91,10 +93,11 @@ export async function syncFreee(_data: FormData) {
       ? "synced" : "connection-changed";
   } catch (error) {
     await finishSync(id, connection.version);
-    outcome = "sync-error";
+    outcome = error instanceof FreeeSettingsRequiredError ? "not-configured" : "sync-error";
     if (error instanceof FreeeApiError) {
-      if (["invalid_grant", "expired_access_token", "re_authorization_required"].includes(error.code ?? "")) outcome = "sync-reconnect";
-      else if (error.status === 403 || error.code === "user_do_not_have_permission") outcome = "sync-permission";
+      if (["invalid_grant", "expired_access_token", "re_authorization_required"].includes(error.code ?? "")) {
+        outcome = settings ? "sync-reconnect" : "not-configured";
+      } else if (error.status === 403 || error.code === "user_do_not_have_permission") outcome = "sync-permission";
       else if (error.status === 429) outcome = "sync-limit";
     }
   }
