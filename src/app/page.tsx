@@ -1,10 +1,10 @@
-import { login, logout, savePlan, saveTax, setDemo, setPlanMode } from "@/app/forecast-actions";
+import { login, logout, savePlan, saveTax, setPlanMode } from "@/app/forecast-actions";
 import { startFreee, syncFreee } from "@/app/freee-actions";
 import { ForecastDashboard } from "@/components/forecast-dashboard";
 import { calculateForecast, FORECAST_YEAR } from "@/lib/forecast";
 import { loadForecast } from "@/lib/forecast-store";
 import { freeeSettings, localFreeeCallbackUrl } from "@/lib/freee-settings";
-import { authConfigured, getMode, localOpenAccess, sessionId } from "@/lib/security";
+import { authConfigured, localOpenAccess, sessionId } from "@/lib/security";
 
 export const maxDuration = 120;
 
@@ -29,7 +29,6 @@ const notices: Record<string, string> = {
   "invalid-input": "金額は円単位の整数で入力してください。",
   "invalid-closed-month": "締め済みの月は、月末まで取り込み済みの範囲から選択してください。",
   "invalid-plan-month": "締め済みより後の月を選択してください。",
-  "mode-changed": "表示が切り替わりました。現在の画面から入力し直してください。",
   "tax-saved": "年の前提を保存しました。",
   "plan-saved": "月ごとの見込みを保存しました。",
   "plan-mode-trend": "推移モードに切り替えました。",
@@ -62,8 +61,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
     );
   }
 
-  const mode = await getMode();
-  const data = await loadForecast(mode);
+  const data = await loadForecast();
   const forecast = calculateForecast({
     ...data,
     year: FORECAST_YEAR,
@@ -74,7 +72,6 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
   return (
     <ForecastDashboard
       year={FORECAST_YEAR}
-      isDemo={mode === "demo"}
       forecast={forecast}
       tax={data.tax}
       plans={data.plans}
@@ -94,10 +91,9 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
       actions={{
         startFreee,
         sync: syncFreee,
-        saveTax: saveTax.bind(null, mode),
-        savePlan: savePlan.bind(null, mode),
-        setPlanMode: setPlanMode.bind(null, mode),
-        setDemo,
+        saveTax,
+        savePlan,
+        setPlanMode,
         logout,
       }}
     />

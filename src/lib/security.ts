@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 
 const sessionCookie = "kageco_session";
 const sessionDuration = 8 * 60 * 60;
-export const modeCookie = "kageco_forecast_mode";
 
 export const localOpenAccess = () => process.env.NODE_ENV === "development" && !process.env.APP_PASSWORD;
 
@@ -62,15 +61,5 @@ export async function signIn(password: string) {
 }
 
 export async function signOut() {
-  const jar = await cookies();
-  jar.delete(sessionCookie);
-  jar.delete(modeCookie);
-}
-
-export async function getMode(): Promise<"real" | "demo"> {
-  return (await cookies()).get(modeCookie)?.value === "demo" ? "demo" : "real";
-}
-
-export async function switchMode(mode: "real" | "demo") {
-  (await cookies()).set(modeCookie, mode, { httpOnly: true, secure: secureCookie(), sameSite: "lax", path: "/" });
+  (await cookies()).delete(sessionCookie);
 }

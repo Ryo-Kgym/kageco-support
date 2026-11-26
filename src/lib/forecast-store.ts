@@ -3,8 +3,6 @@ import { randomUUID } from "node:crypto";
 import { FORECAST_YEAR, type MonthAmounts, type MonthlyPlanMode, type TaxInputs } from "./forecast";
 import type { FreeeAccountingSnapshot, FreeeTokens } from "./freee";
 
-type Mode = "real" | "demo";
-
 export function currentForecastDate() {
   const date = new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit",
@@ -17,28 +15,6 @@ export function currentForecastDate() {
     throughDate: year > FORECAST_YEAR ? `${FORECAST_YEAR}-12-31` : date,
   };
 }
-
-const demoTax: TaxInputs = {
-  salaryGross: 0, blueDeduction: 650_000, socialInsurance: 580_000,
-  otherIncomeDeductions: 84_000, otherResidentDeductions: 84_000,
-  residentPersonalDeductionDifference: 0, incomeTaxCredit: 0,
-  withheldIncomeTax: 0, prepaidIncomeTax: 120_000,
-  donationsPaid: 38_000, donationsPlanned: 20_000, donationMethod: "return",
-  consumptionMethod: "general",
-};
-
-const demoMonths: MonthAmounts[] = [
-  [660_000, 188_000], [740_000, 207_000], [716_000, 245_000], [845_000, 210_000],
-  [782_000, 306_000], [960_000, 238_000], [885_000, 201_000], [815_000, 263_000],
-  [915_000, 235_000],
-].map(([sales, expenses], index) => ({
-  month: index + 1, sales, expenses,
-  salesTax: Math.round(sales * 0.1), deductiblePurchaseTax: Math.round(expenses * 0.08),
-}));
-
-const demoPlans: Record<string, MonthAmounts> = {
-  "12": { month: 12, sales: 1_034_000, expenses: 312_000, salesTax: 103_400, deductiblePurchaseTax: 24_960 },
-};
 
 interface Preferences {
   tax?: TaxInputs;
@@ -59,7 +35,7 @@ interface Connection {
 }
 
 interface ForecastState {
-  preferences: Record<Mode, Preferences>;
+  preferences: { real: Preferences };
   oauthAttempts: Map<string, { session: string; expiresAt: number }>;
   connection?: Connection;
 }
@@ -69,55 +45,37 @@ const server = globalThis as typeof globalThis & { kagecoForecastState?: Forecas
 const state: ForecastState = server.kagecoForecastState ??= {
   preferences: {
     real: { plans: {}, lastClosedMonth: null },
-    demo: { plans: {}, lastClosedMonth: null },
   },
   oauthAttempts: new Map(),
 };
 
-export async function savePreferences(mode: Mode, tax: TaxInputs, lastClosedMonth: number | null) {
-  Object.assign(state.preferences[mode], { tax, lastClosedMonth });
+export async function savePreferences(tax: TaxInputs, lastClosedMonth: number | null) {
+  Object.assign(state.preferences.real, { tax, lastClosedMonth });
 }
 
-export async function saveMonthlyPlan(mode: Mode, month: number, plan: MonthAmounts | null) {
-  const stored = state.preferences[mode];
+export async function saveMonthlyPlan(month: number, plan: MonthAmounts | null) {
+  const stored = state.preferences.real;
   stored.plans[month] = plan;
   stored.monthlyPlanMode ??= "manual";
 }
 
-export async function saveMonthlyPlanMode(mode: Mode, monthlyPlanMode: MonthlyPlanMode) {
-  state.preferences[mode].monthlyPlanMode = monthlyPlanMode;
+export async function saveMonthlyPlanMode(monthlyPlanMode: MonthlyPlanMode) {
+  state.preferences.real.monthlyPlanMode = monthlyPlanMode;
 }
 
 export async function connectionDetails() {
   return state.connection?.details;
 }
 
-export async function loadForecast(mode: Mode) {
-  const stored = state.preferences[mode];
+export async function loadForecast() {
+  const stored = state.preferences.real;
   const connection = state.connection;
   const accounting = connection?.accounting;
-  const maxClosedMonth = mode === "demo" ? 9
-    : Math.min(accounting?.snapshot.closedThroughMonth ?? 0, currentForecastDate().latestClosedMonth);
+  const maxClosedMonth = Math.min(accounting?.snapshot.closedThroughMonth ?? 0, currentForecastDate().latestClosedMonth);
   const lastClosedMonth = Math.min(stored.lastClosedMonth ?? maxClosedMonth, maxClosedMonth);
-  const planEntries = mode === "demo" ? { ...demoPlans, ...stored.plans } : stored.plans;
-  const plans = Object.values(planEntries).filter((plan) => plan !== null);
-  const hasSavedFuturePlan = Object.values(stored.plans).some((plan) => plan !== null && plan.month > lastClosedMonth);
+  const plans = Object.values(stored.plans).filter((plan) => plan !== null);
+  const hasSavedFuturePlan = plans.some((plan) => plan.month > lastClosedMonth);
   const monthlyPlanMode: MonthlyPlanMode = stored.monthlyPlanMode ?? (hasSavedFuturePlan ? "manual" : "trend");
-
-  if (mode === "demo") {
-    return {
-      actuals: demoMonths,
-      plans,
-      monthlyPlanMode,
-      tax: stored.tax ?? demoTax,
-      lastClosedMonth,
-      lastClosedMonthSetting: stored.lastClosedMonth,
-      maxClosedMonth,
-      consumptionMethodConfirmed: true,
-      companyName: null,
-      syncedAt: null,
-    };
-  }
 
   const settings = accounting?.snapshot.taxSettings;
   const tax: TaxInputs = stored.tax ?? {};
