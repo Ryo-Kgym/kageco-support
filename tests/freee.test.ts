@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { exchangeFreeeCode, FreeeApiError, freeeAuthorizationUrl, refreshFreeeTokens, syncFreeeAccounting } from "../src/lib/freee";
+import { exchangeFreeeCode, FreeeApiError, freeeAuthorizationUrl, refreshFreeeTokens, revokeFreeeTokens, syncFreeeAccounting } from "../src/lib/freee";
 
 test("exchanges and rotates freee tokens with the selected company", async () => {
   const redirectUri = "http://localhost:3000/freee/callback";
@@ -33,6 +33,55 @@ test("exchanges and rotates freee tokens with the selected company", async () =>
   assert.ok(first.expiresAt > Date.now());
   assert.equal(next.companyId, null);
   assert.equal(next.refreshToken, "new-refresh");
+});
+
+const revokeTestTokens = { accessToken: "example-access", refreshToken: "example-refresh", expiresAt: 0, companyId: 123 };
+
+test("revokes both freee tokens with form-encoded POST requests and accepts empty responses", async () => {
+  const revoked: string[] = [];
+  const fetcher: typeof fetch = async (resource, init) => {
+    assert.equal(resource, "https://accounts.secure.freee.co.jp/public_api/revoke");
+    assert.equal(init?.method, "POST");
+    assert.equal(init?.redirect, "error");
+    assert.equal(new Headers(init?.headers).get("content-type"), "application/x-www-form-urlencoded");
+    assert.ok(init?.body instanceof URLSearchParams);
+    assert.deepEqual([...init.body.keys()], ["token"]);
+    revoked.push(init.body.get("token") ?? "");
+    return new Response(null, { status: 200 });
+  };
+
+  assert.equal(await revokeFreeeTokens(revokeTestTokens, fetcher), true);
+  assert.deepEqual(revoked, ["example-refresh", "example-access"]);
+});
+
+test("revokes an identical access and refresh token only once", async () => {
+  let requests = 0;
+  const fetcher: typeof fetch = async () => {
+    requests += 1;
+    return new Response(null, { status: 204 });
+  };
+
+  assert.equal(await revokeFreeeTokens({ ...revokeTestTokens, accessToken: revokeTestTokens.refreshToken }, fetcher), true);
+  assert.equal(requests, 1);
+});
+
+test("attempts both tokens even if a revocation fails", async () => {
+  const failures = [
+    () => new Response(null, { status: 503 }),
+    () => { throw new TypeError("Network error"); },
+  ];
+  for (const revokeRefresh of failures) {
+    const attempted: string[] = [];
+    const fetcher: typeof fetch = async (_resource, init) => {
+      assert.ok(init?.body instanceof URLSearchParams);
+      const token = init.body.get("token") ?? "";
+      attempted.push(token);
+      return token === revokeTestTokens.refreshToken ? revokeRefresh() : new Response(null, { status: 200 });
+    };
+
+    assert.equal(await revokeFreeeTokens(revokeTestTokens, fetcher), false);
+    assert.deepEqual(attempted, ["example-refresh", "example-access"]);
+  }
 });
 
 const masters: Record<string, unknown> = {

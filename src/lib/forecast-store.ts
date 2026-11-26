@@ -25,19 +25,22 @@ interface Preferences {
 
 type ConnectionDetails = { company_id: number; company_name: string; version: string };
 type Snapshot = FreeeAccountingSnapshot & { closedThroughMonth: number };
+type Accounting = { snapshot: Snapshot; syncedAt: string };
 
 interface Connection {
   details: ConnectionDetails;
   tokens: FreeeTokens;
   refresh?: Promise<FreeeTokens>;
   sync?: { id: string; expiresAt: number };
-  accounting?: { snapshot: Snapshot; syncedAt: string };
+  accounting?: Accounting;
 }
 
 interface ForecastState {
   preferences: { real: Preferences };
   oauthAttempts: Map<string, { session: string; expiresAt: number }>;
+  oauthGeneration?: number;
   connection?: Connection;
+  retainedAccounting?: Accounting;
 }
 
 // Keep state shared across module reloads within this server process.
@@ -70,7 +73,7 @@ export async function connectionDetails() {
 export async function loadForecast() {
   const stored = state.preferences.real;
   const connection = state.connection;
-  const accounting = connection?.accounting;
+  const accounting = connection?.accounting ?? state.retainedAccounting;
   const maxClosedMonth = Math.min(accounting?.snapshot.closedThroughMonth ?? 0, currentForecastDate().latestClosedMonth);
   const lastClosedMonth = Math.min(stored.lastClosedMonth ?? maxClosedMonth, maxClosedMonth);
   const plans = Object.values(stored.plans).filter((plan) => plan !== null);
@@ -93,7 +96,8 @@ export async function loadForecast() {
     lastClosedMonth,
     lastClosedMonthSetting: stored.lastClosedMonth,
     maxClosedMonth,
-    companyName: connection?.details.company_name ?? null,
+    connected: connection !== undefined,
+    companyName: connection?.details.company_name ?? accounting?.snapshot.companyName ?? null,
     syncedAt: accounting?.syncedAt ?? null,
     consumptionMethodConfirmed: tax.consumptionMethod !== undefined,
   };
@@ -109,20 +113,37 @@ export async function saveOAuthAttempt(nonce: string, session: string) {
 
 export async function consumeOAuthAttempt(nonce: string, session: string) {
   const attempt = state.oauthAttempts.get(nonce);
-  if (!attempt || attempt.session !== session) return false;
+  if (!attempt || attempt.session !== session) return null;
   state.oauthAttempts.delete(nonce);
-  return attempt.expiresAt > Date.now();
+  return attempt.expiresAt > Date.now() ? state.oauthGeneration ?? 0 : null;
 }
 
-export async function saveConnection(companyId: number, name: string, tokens: FreeeTokens) {
+export async function saveConnection(companyId: number, name: string, tokens: FreeeTokens, oauthGeneration: number) {
+  if (oauthGeneration !== (state.oauthGeneration ?? 0)) return "invalid-oauth";
   const previous = state.connection;
-  if (previous && previous.details.company_id !== companyId) return false;
+  const accounting = previous?.accounting ?? state.retainedAccounting;
+  const previousCompanyId = previous?.details.company_id ?? accounting?.snapshot.companyId;
+  if (previousCompanyId !== undefined && previousCompanyId !== companyId) return "different-company";
   state.connection = {
     details: { company_id: companyId, company_name: name, version: randomUUID() },
     tokens,
-    accounting: previous?.accounting,
+    accounting,
   };
-  return true;
+  state.retainedAccounting = undefined;
+  return "connected";
+}
+
+export async function disconnectConnection() {
+  const connection = state.connection;
+  if (!connection) return null;
+  if (connection.refresh) await connection.refresh.catch(() => undefined);
+  if (state.connection !== connection) return null;
+
+  state.retainedAccounting = connection.accounting;
+  state.connection = undefined;
+  state.oauthGeneration = (state.oauthGeneration ?? 0) + 1;
+  state.oauthAttempts.clear();
+  return connection.tokens;
 }
 
 export async function beginSync(version: string) {
