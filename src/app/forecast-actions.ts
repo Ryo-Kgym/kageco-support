@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { DEFAULT_OPTIONAL_TAX_AMOUNTS, type MonthAmounts, type TaxInputs } from "@/lib/forecast";
+import { DEFAULT_TAX_FORM_AMOUNTS, type MonthAmounts, type TaxInputs } from "@/lib/forecast";
 import { loadForecast, saveMonthlyPlan, savePreferences } from "@/lib/forecast-store";
 import { getMode, requireSession, signIn, signOut, switchMode } from "@/lib/security";
 
@@ -10,7 +10,7 @@ const taxMoneyFields = [
   "residentAdjustmentDeduction", "residentPersonalDeductionDifference", "incomeTaxCredit", "withheldIncomeTax",
   "prepaidIncomeTax", "donationsPaid", "donationsPlanned",
 ] as const;
-const taxAmountDefaults: Partial<Record<(typeof taxMoneyFields)[number], number>> = DEFAULT_OPTIONAL_TAX_AMOUNTS;
+const taxAmountDefaults: Partial<Record<(typeof taxMoneyFields)[number], number>> = DEFAULT_TAX_FORM_AMOUNTS;
 const planFields = ["sales", "expenses", "salesTax", "deductiblePurchaseTax"] as const;
 
 function integer(form: FormData, field: string, signed = false) {
