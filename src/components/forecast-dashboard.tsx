@@ -1,10 +1,12 @@
-import type { CSSProperties } from "react";
+import { MonthlyChart } from "@/components/monthly-chart";
+import { summarizeAccountItems, type MonthlyChartAccountItems } from "@/lib/chart-account-items";
 import { DEFAULT_TAX_FORM_AMOUNTS, type ForecastResult, type MonthAmounts, type MonthlyPlanMode, type TaxInputs } from "@/lib/forecast";
 
 type FormAction = (formData: FormData) => Promise<void>;
 type DashboardProps = {
   year: number;
   forecast: ForecastResult;
+  accountItems: MonthlyChartAccountItems;
   tax: TaxInputs;
   plans: MonthAmounts[];
   monthlyPlanMode: MonthlyPlanMode;
@@ -17,6 +19,7 @@ type DashboardProps = {
     localSetup?: boolean;
     companyName: string | null;
     syncedAt: string | null;
+    accountItemsNeedSync: boolean;
     status?: string | null;
   };
   notice?: string;
@@ -61,7 +64,36 @@ function closedActualAmount(months: ForecastResult["months"], key: "sales" | "ex
   return total;
 }
 
-function ActualSummary({ forecast }: { forecast: ForecastResult }) {
+function AccountSummary({ rows, accountItems }: { rows: ForecastResult["months"]; accountItems: MonthlyChartAccountItems }) {
+  const breakdown = summarizeAccountItems(rows, accountItems);
+  if (rows.length === 0 || breakdown.every((group) => group === null)) return null;
+
+  return (
+    <details className="monthly-detail account-summary">
+      <summary>勘定科目別の内訳</summary>
+      <div className="account-summary-groups">
+        {breakdown.map((group, index) => {
+          const title = index === 0 ? "事業売上" : "事業経費";
+          return (
+            <section key={title}>
+              <h3>{title}</h3>
+              {group === null ? <p>未集計の月があります。</p> : (
+                <dl className="account-summary-amounts">
+                  {group.items.map(({ id, name, amount }) => <div key={id}><dt>{name}</dt><dd>{yen(amount)}</dd></div>)}
+                  {group.manual !== null && <div><dt>手入力分（内訳なし）</dt><dd>{yen(group.manual)}</dd></div>}
+                  {group.unavailable !== null && <div><dt>内訳未取得分</dt><dd>{yen(group.unavailable)}</dd></div>}
+                  {group.items.length === 0 && group.manual === null && group.unavailable === null && <div><dt>合計</dt><dd>0円</dd></div>}
+                </dl>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
+function ActualSummary({ forecast, accountItems }: Pick<DashboardProps, "forecast" | "accountItems">) {
   const closedMonths = forecast.months.filter(({ closed }) => closed);
   const lastMonth = closedMonths.at(-1)?.month ?? 0;
   const sales = closedActualAmount(closedMonths, "sales");
@@ -87,6 +119,7 @@ function ActualSummary({ forecast }: { forecast: ForecastResult }) {
           </div>
         ))}
       </dl>
+      <AccountSummary rows={closedMonths} accountItems={accountItems} />
     </section>
   );
 }
@@ -122,91 +155,6 @@ function MetricCard({
   );
 }
 
-function MonthlyChart({ forecast: { months: rows } }: { forecast: ForecastResult }) {
-  const amounts = rows.flatMap(({ forecast }) => [forecast.sales, forecast.expenses]);
-  const available = amounts.some((value) => value !== null);
-  const ceiling = Math.max(0, ...amounts.map((value) => value ?? 0));
-  const floor = Math.min(0, ...amounts.map((value) => value ?? 0));
-  const range = ceiling - floor || 1;
-  const baseline = -floor / range;
-  const chartStyle = { "--chart-zero": `${baseline * 100}%` } as CSSProperties;
-
-  const makeBar = (value: number | null, expense: boolean, source: string) => {
-    const className = `chart-bar${expense ? " bar-expenses" : ""}${source !== "actual" ? " is-forecast" : ""}`;
-    const bottom = (value !== null && value < 0 ? baseline + value / range : baseline) * 100;
-    const style = {
-      "--bar-height": `${Math.abs(value ?? 0) / range * 100}%`,
-      "--bar-bottom": `${bottom}%`,
-    } as CSSProperties;
-    return (
-      <span className="chart-bar-track">
-        {value !== null && <span className={className} style={style} />}
-      </span>
-    );
-  };
-
-  return (
-    <section className="dashboard-panel" id="monthly" aria-labelledby="monthly-heading">
-      <header className="panel-heading">
-        <h2 id="monthly-heading">月ごとの事業収支</h2>
-        <p>締め済みの実績と各月の着地見込み</p>
-      </header>
-      {available ? (
-        <>
-          <ul className="chart-legend" aria-hidden="true">
-            <li><span className="legend-swatch" />売上</li>
-            <li><span className="legend-swatch bar-expenses" />経費</li>
-            <li><span className="legend-swatch is-forecast" />見込み</li>
-          </ul>
-          <div className="chart-scroll" aria-hidden="true">
-            <div className="monthly-chart" style={chartStyle}>
-              {rows.map((row) => (
-                <div className="chart-month" key={row.month} title={`${row.month}月 売上 ${yen(row.forecast.sales)}・経費 ${yen(row.forecast.expenses)}`}>
-                  <div className="chart-month-bars">
-                    <span className="chart-baseline" />
-                    {makeBar(row.forecast.sales, false, row.sources.sales)}
-                    {makeBar(row.forecast.expenses, true, row.sources.expenses)}
-                  </div>
-                  <span className={`chart-month-label${row.closed ? "" : " is-projected"}`}>{row.month}月</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="chart-empty"><p>freeeから同期するか、月ごとの見込みを入力してください。</p></div>
-      )}
-      <details className="monthly-detail">
-        <summary>月別の金額を表示</summary>
-        <div className="table-scroll">
-          <table className="month-table" aria-label="事業売上と経費の月別実績・見込み">
-            <thead>
-              <tr>
-                <th scope="col">月</th>
-                <th scope="col" className="numeric-cell">売上実績</th>
-                <th scope="col" className="numeric-cell">経費実績</th>
-                <th scope="col" className="numeric-cell">売上見込み</th>
-                <th scope="col" className="numeric-cell">経費見込み</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ month, closed, actual, forecast }) => (
-                <tr key={month}>
-                  <th scope="row">{month}月</th>
-                  <td className="numeric-cell">{yen(actual.sales)}</td>
-                  <td className="numeric-cell">{yen(actual.expenses)}</td>
-                  <td className="numeric-cell">{closed ? "締め済み" : yen(forecast.sales)}</td>
-                  <td className="numeric-cell">{closed ? "締め済み" : yen(forecast.expenses)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
-    </section>
-  );
-}
-
 function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<DashboardProps, "connection" | "lastClosedMonth" | "actions">) {
   const { connected, configured, localSetup, syncedAt } = connection;
   const connectionLabel = connected ? "接続済み" : "未接続";
@@ -230,6 +178,7 @@ function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<Dashboar
           {localSetup ? <a href="/freee/setup">接続設定</a> : "接続設定"}が必要です。
         </p>
       )}
+      {connection.accountItemsNeedSync && <p className="connection-message">勘定科目別の内訳を表示するには、freeeから実績を再同期してください。</p>}
       {connection.status && <p className="connection-message">{connection.status}</p>}
       {(connected || configured || localSetup) && (
         <div className="connection-actions">
@@ -476,7 +425,7 @@ function ForecastGuidance({ missing, synced }: { missing: ForecastResult["missin
 }
 
 export function ForecastDashboard({
-  year, forecast, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions, canLogout,
+  year, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions, canLogout,
 }: DashboardProps) {
   return (
     <div className="dashboard-shell">
@@ -502,7 +451,7 @@ export function ForecastDashboard({
             : "freeeから実績を同期し、給与・控除などを入力して「年末の見込みを計算」を押してください。"}</p>
         </header>
         {notice && <p className="dashboard-notice" role="status">{notice}</p>}
-        <ActualSummary forecast={forecast} />
+        <ActualSummary forecast={forecast} accountItems={accountItems} />
         <section aria-labelledby="summary-heading">
           <div className="section-heading">
             <h2 id="summary-heading">年末の見込み</h2>
@@ -523,10 +472,11 @@ export function ForecastDashboard({
             ]} />
             <MetricCard title="消費税" amount={forecast.consumptionTax === null ? null : Math.abs(forecast.consumptionTax)} caption={forecast.consumptionTax != null && forecast.consumptionTax < 0 ? "消費税・地方消費税の還付" : "消費税・地方消費税の納付額"} />
           </div>
+          <AccountSummary rows={forecast.months} accountItems={accountItems} />
           <ForecastGuidance missing={forecast.missing} synced={connection.syncedAt !== null} />
         </section>
         <div className="dashboard-overview">
-          <MonthlyChart forecast={forecast} />
+          <MonthlyChart rows={forecast.months} accountItems={accountItems} />
           <ConnectionPanel connection={connection} lastClosedMonth={lastClosedMonth} actions={actions} />
         </div>
         <section id="settings" className="dashboard-settings" aria-labelledby="settings-heading">

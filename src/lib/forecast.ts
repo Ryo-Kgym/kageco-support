@@ -114,13 +114,18 @@ function mapAmounts<T>(callback: (key: AmountKey) => T): Record<AmountKey, T> {
   };
 }
 
-function averageClosedAmount(actuals: Map<number, MonthAmounts>, lastClosedMonth: number, key: AmountKey) {
-  const amounts: number[] = [];
+export function recentClosedAmounts(actuals: ReadonlyMap<number, MonthAmounts>, lastClosedMonth: number, key: AmountKey) {
+  const amounts: { month: number; amount: number }[] = [];
   for (let month = lastClosedMonth; month > 0 && amounts.length < 3; month--) {
     const amount = readAmount(actuals.get(month)?.[key]);
-    if (amount !== null) amounts.push(amount);
+    if (amount !== null) amounts.push({ month, amount });
   }
-  return amounts.length ? Math.round(amounts.reduce((total, amount) => total + amount, 0) / amounts.length) : null;
+  return amounts;
+}
+
+function averageClosedAmount(actuals: Map<number, MonthAmounts>, lastClosedMonth: number, key: AmountKey) {
+  const amounts = recentClosedAmounts(actuals, lastClosedMonth, key);
+  return amounts.length ? Math.round(amounts.reduce((total, { amount }) => total + amount, 0) / amounts.length) : null;
 }
 
 function forecastMonths(input: ForecastInput): ForecastMonth[] {

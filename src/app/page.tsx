@@ -1,6 +1,7 @@
 import { login, logout, savePlan, saveTax, setPlanMode } from "@/app/forecast-actions";
 import { disconnectFreee, startFreee, syncFreee } from "@/app/freee-actions";
 import { ForecastDashboard } from "@/components/forecast-dashboard";
+import { getChartAccountItems } from "@/lib/chart-account-items";
 import { calculateForecast, FORECAST_YEAR } from "@/lib/forecast";
 import { loadForecast } from "@/lib/forecast-store";
 import { freeeSettings, localFreeeCallbackUrl } from "@/lib/freee-settings";
@@ -76,6 +77,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
     <ForecastDashboard
       year={FORECAST_YEAR}
       forecast={forecast}
+      accountItems={getChartAccountItems(forecast.months, data.actuals)}
       tax={data.tax}
       plans={data.plans}
       monthlyPlanMode={data.monthlyPlanMode}
@@ -88,6 +90,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
         localSetup: Boolean(localFreeeCallbackUrl()),
         companyName: data.companyName,
         syncedAt: data.syncedAt,
+        accountItemsNeedSync: data.actuals.some((row) => row.sales !== null && row.expenses !== null && !row.accountItems),
         status: data.tax.consumptionMethod && !data.consumptionMethodConfirmed ? "取り込んだ消費税の申告方式を確認し、「年末の見込みを計算」を押してください。" : null,
       }}
       notice={message}
