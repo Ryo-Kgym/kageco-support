@@ -3,7 +3,7 @@ import { startFreee, syncFreee } from "@/app/freee-actions";
 import { ForecastDashboard } from "@/components/forecast-dashboard";
 import { calculateForecast, FORECAST_YEAR } from "@/lib/forecast";
 import { loadForecast } from "@/lib/forecast-store";
-import { freeeSettings } from "@/lib/freee-settings";
+import { freeeSettings, localFreeeCallbackUrl } from "@/lib/freee-settings";
 import { authConfigured, getMode, localOpenAccess, sessionId } from "@/lib/security";
 
 export const maxDuration = 120;
@@ -79,6 +79,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
       lastClosedMonthSetting={data.lastClosedMonthSetting}
       connection={{
         configured: Boolean(freeeSettings()),
+        localSetup: Boolean(localFreeeCallbackUrl()) && !data.companyName,
         companyName: data.companyName,
         syncedAt: data.syncedAt,
         status: data.tax.consumptionMethod && !data.consumptionMethodConfirmed ? "取り込んだ消費税の申告方式を確認し、年の前提を保存してください。" : null,

@@ -13,6 +13,7 @@ type DashboardProps = {
   lastClosedMonthSetting: number | null;
   connection: {
     configured: boolean;
+    localSetup?: boolean;
     companyName: string | null;
     syncedAt: string | null;
     status?: string | null;
@@ -191,6 +192,21 @@ function ConnectionPanel({ connection, lastClosedMonth, actions, isDemo }: Pick<
             <button className={`dashboard-button${connected ? " secondary" : ""}`} type="submit">
               {connected ? "再接続" : "freeeに接続"}
             </button>
+          </form>
+          {connection.localSetup && !connected && (
+            <a className="dashboard-button secondary" href="/freee/setup">接続設定を変更</a>
+          )}
+        </div>
+      )}
+      {!connection.configured && connection.localSetup && !isDemo && (
+        <div className="connection-actions">
+          <a className="dashboard-button" href="/freee/setup">freeeに接続</a>
+        </div>
+      )}
+      {isDemo && (connection.configured || connection.localSetup) && (
+        <div className="connection-actions">
+          <form action={actions.startFreee}>
+            <button className="dashboard-button" type="submit">実データを接続</button>
           </form>
         </div>
       )}

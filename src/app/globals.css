@@ -733,6 +733,16 @@ a {
   width: min(100%, 420px);
 }
 
+.freee-callback-address {
+  margin: 16px 0;
+  font-size: .875rem;
+}
+
+.freee-callback-address dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1150px) {
   .dashboard-shell {
     grid-template-columns: 172px minmax(0, 1fr);

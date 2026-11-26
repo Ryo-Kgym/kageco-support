@@ -4,21 +4,44 @@ import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { FORECAST_YEAR } from "@/lib/forecast";
 import { FREEE_ISSUER, FreeeApiError, exchangeFreeeCode, freeeAuthorizationUrl, getFreeeCompany, refreshFreeeTokens, syncFreeeAccounting } from "@/lib/freee";
-import { activeTokens, beginSync, connectionDetails, consumeOAuthAttempt, currentForecastDate, finishSync, saveConnection, saveOAuthAttempt } from "@/lib/forecast-store";
-import { freeeSettings } from "@/lib/freee-settings";
-import { getMode, requireSession } from "@/lib/security";
+import { activeTokens, beginSync, clearOAuthAttempts, connectionDetails, consumeOAuthAttempt, currentForecastDate, finishSync, saveConnection, saveOAuthAttempt } from "@/lib/forecast-store";
+import { freeeSettings, localFreeeCallbackUrl, setLocalFreeeCredentials } from "@/lib/freee-settings";
+import { getMode, requireSession, switchMode } from "@/lib/security";
 
 function returnHome(notice: string): never {
   redirect(`/?notice=${notice}#freee`);
 }
 
-export async function startFreee(_data: FormData) {
-  const session = await requireSession();
-  const settings = freeeSettings();
-  if (!settings || (await getMode()) !== "real") returnHome("not-configured");
+async function redirectToFreee(session: string, settings: NonNullable<ReturnType<typeof freeeSettings>>) {
   const state = randomBytes(32).toString("base64url");
   await saveOAuthAttempt(state, session);
   redirect(freeeAuthorizationUrl({ ...settings, state }));
+}
+
+export async function startFreee(_data: FormData) {
+  const session = await requireSession();
+  const settings = freeeSettings();
+  if (!settings && !localFreeeCallbackUrl()) returnHome("not-configured");
+  if (await getMode() === "demo") await switchMode("real");
+  if (!settings) redirect("/freee/setup");
+  await redirectToFreee(session, settings);
+}
+
+export async function configureAndStartFreee(form: FormData) {
+  const session = await requireSession();
+  if (await getMode() !== "real" || !localFreeeCallbackUrl() || await connectionDetails()) redirect("/#freee");
+
+  const submittedId = form.get("clientId");
+  const submittedSecret = form.get("clientSecret");
+  const clientId = typeof submittedId === "string" ? submittedId.trim() : "";
+  const clientSecret = typeof submittedSecret === "string" ? submittedSecret.trim() : "";
+  if (!/^[!-~]{1,512}$/.test(clientId) || !/^[!-~]{1,1024}$/.test(clientSecret)) redirect("/freee/setup?error=credentials");
+
+  if (!setLocalFreeeCredentials({ clientId, clientSecret })) returnHome("not-configured");
+  clearOAuthAttempts();
+  const settings = freeeSettings();
+  if (!settings) returnHome("not-configured");
+  await redirectToFreee(session, settings);
 }
 
 export async function completeFreee(form: FormData) {
@@ -39,7 +62,11 @@ export async function completeFreee(form: FormData) {
       outcome = "company-required";
     } else {
       const company = await getFreeeCompany({ accessToken: tokens.accessToken, companyId: tokens.companyId });
-      if (company.organizationType !== "individual") {
+      const currentSettings = freeeSettings();
+      if (currentSettings?.clientId !== settings.clientId || currentSettings.clientSecret !== settings.clientSecret
+        || currentSettings.redirectUri !== settings.redirectUri) {
+        outcome = "invalid-oauth";
+      } else if (company.organizationType !== "individual") {
         outcome = "individual-required";
       } else {
         outcome = await saveConnection(company.id, company.name, tokens) ? "connected" : "different-company";
