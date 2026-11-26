@@ -5,7 +5,6 @@ const config: NextConfig = {
   devIndicators: false,
   logging: { incomingRequests: { ignore: [/^\/freee\/callback(?:\?|$)/] } },
   poweredByHeader: false,
-  serverExternalPackages: ["@electric-sql/pglite", "pg"],
   async headers() {
     return [{
       source: "/freee/callback",

@@ -222,7 +222,7 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
     <section className="dashboard-panel" aria-labelledby="tax-heading">
       <header className="panel-heading">
         <h2 id="tax-heading">年の前提と税金</h2>
-        <p>金額がないと分かっている項目には 0 円を入力してください。</p>
+        <p>金額がない項目には0円を入力します。入力はサーバー起動中だけ保持します。</p>
       </header>
       <form action={action} className="editable-form">
         <fieldset className="form-group">
