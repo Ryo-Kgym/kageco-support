@@ -480,7 +480,8 @@ a {
 }
 
 .monthly-detail summary,
-.plan-edit summary {
+.plan-edit summary,
+.tax-form-details summary {
   color: var(--forest);
   font-size: .9rem;
   font-weight: 700;
@@ -689,6 +690,27 @@ a {
   flex: none;
   margin: 3px 0 0;
   accent-color: var(--forest);
+}
+
+@supports selector(:has(*)) {
+  .consumption-tax-group:not(:has(option[value="simplified"]:checked)) .consumption-tax-rate,
+  .consumption-tax-group:not(:has(option[value="two-tenths"]:checked)) .consumption-tax-eligibility {
+    display: none;
+  }
+}
+
+.tax-form-details {
+  border-block: 1px solid var(--line-subtle);
+}
+
+.tax-form-details summary {
+  padding: 10px 0;
+}
+
+.tax-form-details-content {
+  display: grid;
+  gap: 18px;
+  padding: 3px 0 16px;
 }
 
 .form-footer {

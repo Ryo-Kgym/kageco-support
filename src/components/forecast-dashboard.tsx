@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { ForecastResult, MonthAmounts, TaxInputs } from "@/lib/forecast";
+import { DEFAULT_OPTIONAL_TAX_AMOUNTS, type ForecastResult, type MonthAmounts, type TaxInputs } from "@/lib/forecast";
 
 type FormAction = (formData: FormData) => Promise<void>;
 type DashboardProps = {
@@ -235,35 +235,21 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
     <section className="dashboard-panel" aria-labelledby="tax-heading">
       <header className="panel-heading">
         <h2 id="tax-heading">年の前提と税金</h2>
-        <p>金額がない項目には0円を入力します。入力はサーバー起動中だけ保持します。</p>
+        <p>金額は円で入力し、該当しない項目には0円を入れます。入力はサーバー起動中だけ保持します。</p>
       </header>
       <form action={action} className="editable-form">
         <fieldset className="form-group">
           <legend>収入と控除</legend>
           <div className="field-grid">
-            <label className="form-field">
-              <span>締め済みの最終月</span>
-              <select name="lastClosedMonth" defaultValue={lastClosedMonthSetting ?? ""}>
-                <option value="">自動（同期済みの最終月）</option>
-                <option value={0}>締め済みの月なし</option>
-                {months.slice(0, maxClosedMonth).map((month) => <option key={month} value={month}>{month}月</option>)}
-              </select>
-            </label>
             <AmountField name="salaryGross" label="給与・賞与の年額" value={tax.salaryGross} />
             <AmountField name="blueDeduction" label="青色申告特別控除" value={tax.blueDeduction} />
             <AmountField name="socialInsurance" label="社会保険料控除" value={tax.socialInsurance} />
-            <AmountField name="otherIncomeDeductions" label="その他の所得控除" value={tax.otherIncomeDeductions} />
-            <AmountField name="incomeTaxCredit" label="所得税の税額控除" value={tax.incomeTaxCredit} />
-            <AmountField name="withheldIncomeTax" label="源泉徴収税額" value={tax.withheldIncomeTax} />
-            <AmountField name="prepaidIncomeTax" label="所得税の予定納税額" value={tax.prepaidIncomeTax} />
           </div>
-          <p className="form-hint">その他の所得控除には、所得税の扶養控除などを入力します。</p>
         </fieldset>
         <fieldset className="form-group">
           <legend>ふるさと納税</legend>
           <div className="field-grid">
             <AmountField name="donationsPaid" label="寄附済額" value={tax.donationsPaid} />
-            <AmountField name="donationsPlanned" label="今後の寄附予定額" value={tax.donationsPlanned} />
             <label className="form-field">
               <span>寄附控除の手続き</span>
               <select name="donationMethod" defaultValue={tax.donationMethod ?? ""}>
@@ -272,13 +258,9 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
                 <option value="one-stop">ワンストップ特例</option>
               </select>
             </label>
-            <AmountField name="otherResidentDeductions" label="住民税のその他の所得控除" value={tax.otherResidentDeductions} />
-            <AmountField name="residentPersonalDeductionDifference" label="基礎控除以外の人的控除差" value={tax.residentPersonalDeductionDifference} />
-            <AmountField name="residentAdjustmentDeduction" label="住民税の調整控除（任意）" value={tax.residentAdjustmentDeduction} />
           </div>
-          <p className="form-hint">控除の入力には給与明細や住民税の通知書を参照できます。</p>
         </fieldset>
-        <fieldset className="form-group">
+        <fieldset className="form-group consumption-tax-group">
           <legend>消費税</legend>
           <div className="field-grid">
             <label className="form-field">
@@ -291,7 +273,7 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
                 <option value="two-tenths">2割特例</option>
               </select>
             </label>
-            <label className="form-field">
+            <label className="form-field consumption-tax-rate">
               <span>簡易課税のみなし仕入率</span>
               <select name="simplifiedPurchaseRate" defaultValue={tax.simplifiedPurchaseRate ?? ""}>
                 <option value="">未選択</option>
@@ -301,11 +283,51 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
               </select>
             </label>
           </div>
-          <label className="check-field">
+          <label className="check-field consumption-tax-eligibility">
             <input type="checkbox" name="twoTenthsEligible" defaultChecked={tax.twoTenthsEligible} />
             2割特例の適用要件を確認した
           </label>
         </fieldset>
+        {/* The native disclosure can open before React hydrates it. */}
+        <details className="tax-form-details" suppressHydrationWarning>
+          <summary>詳細設定</summary>
+          <div className="tax-form-details-content">
+            <p className="form-hint">所得税・住民税のその他の所得控除、所得税の税額控除、寄附予定額は0円が初期値です。</p>
+            <fieldset className="form-group">
+              <legend>集計期間</legend>
+              <div className="field-grid">
+                <label className="form-field">
+                  <span>締め済みの最終月</span>
+                  <select name="lastClosedMonth" defaultValue={lastClosedMonthSetting ?? ""}>
+                    <option value="">自動（同期済みの最終月）</option>
+                    <option value={0}>締め済みの月なし</option>
+                    {months.slice(0, maxClosedMonth).map((month) => <option key={month} value={month}>{month}月</option>)}
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+            <fieldset className="form-group">
+              <legend>所得税の控除と精算</legend>
+              <div className="field-grid">
+                <AmountField name="otherIncomeDeductions" label="その他の所得控除" value={tax.otherIncomeDeductions ?? DEFAULT_OPTIONAL_TAX_AMOUNTS.otherIncomeDeductions} />
+                <AmountField name="incomeTaxCredit" label="所得税の税額控除" value={tax.incomeTaxCredit ?? DEFAULT_OPTIONAL_TAX_AMOUNTS.incomeTaxCredit} />
+                <AmountField name="withheldIncomeTax" label="源泉徴収税額" value={tax.withheldIncomeTax} />
+                <AmountField name="prepaidIncomeTax" label="所得税の予定納税額" value={tax.prepaidIncomeTax} />
+              </div>
+              <p className="form-hint">その他の所得控除には、所得税の扶養控除などを入力します。</p>
+            </fieldset>
+            <fieldset className="form-group">
+              <legend>ふるさと納税と住民税</legend>
+              <div className="field-grid">
+                <AmountField name="donationsPlanned" label="今後の寄附予定額" value={tax.donationsPlanned ?? DEFAULT_OPTIONAL_TAX_AMOUNTS.donationsPlanned} />
+                <AmountField name="otherResidentDeductions" label="住民税のその他の所得控除" value={tax.otherResidentDeductions ?? DEFAULT_OPTIONAL_TAX_AMOUNTS.otherResidentDeductions} />
+                <AmountField name="residentPersonalDeductionDifference" label="基礎控除以外の人的控除差" value={tax.residentPersonalDeductionDifference} />
+                <AmountField name="residentAdjustmentDeduction" label="住民税の調整控除（任意）" value={tax.residentAdjustmentDeduction} />
+              </div>
+              <p className="form-hint">控除の入力には給与明細や住民税の通知書を参照できます。</p>
+            </fieldset>
+          </div>
+        </details>
         <div className="form-footer"><button className="dashboard-button" type="submit">年の前提を保存</button></div>
       </form>
     </section>

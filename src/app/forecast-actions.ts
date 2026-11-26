@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import type { MonthAmounts, TaxInputs } from "@/lib/forecast";
+import { DEFAULT_OPTIONAL_TAX_AMOUNTS, type MonthAmounts, type TaxInputs } from "@/lib/forecast";
 import { loadForecast, saveMonthlyPlan, savePreferences } from "@/lib/forecast-store";
 import { getMode, requireSession, signIn, signOut, switchMode } from "@/lib/security";
 
@@ -10,6 +10,7 @@ const taxMoneyFields = [
   "residentAdjustmentDeduction", "residentPersonalDeductionDifference", "incomeTaxCredit", "withheldIncomeTax",
   "prepaidIncomeTax", "donationsPaid", "donationsPlanned",
 ] as const;
+const taxAmountDefaults: Partial<Record<(typeof taxMoneyFields)[number], number>> = DEFAULT_OPTIONAL_TAX_AMOUNTS;
 const planFields = ["sales", "expenses", "salesTax", "deductiblePurchaseTax"] as const;
 
 function integer(form: FormData, field: string, signed = false) {
@@ -49,7 +50,7 @@ export async function saveTax(mode: "real" | "demo", form: FormData) {
   if (month !== null && month > maxClosedMonth) redirect("/?notice=invalid-closed-month#settings");
 
   const tax: TaxInputs = {};
-  for (const key of taxMoneyFields) tax[key] = integer(form, key);
+  for (const key of taxMoneyFields) tax[key] = integer(form, key) ?? taxAmountDefaults[key] ?? null;
   const donation = form.get("donationMethod");
   if (donation === "return" || donation === "one-stop") tax.donationMethod = donation;
   const consumption = form.get("consumptionMethod");
