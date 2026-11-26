@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { MonthlyChart } from "@/components/monthly-chart";
+import { APP_NAME } from "@/lib/app-name";
 import { getAccountItemColors, summarizeAccountItems, type AccountItemColors, type MonthlyChartAccountItems } from "@/lib/chart-account-items";
 import { DEFAULT_TAX_FORM_AMOUNTS, type ForecastResult, type MonthAmounts, type MonthlyPlanMode, type TaxInputs } from "@/lib/forecast";
 
@@ -461,7 +462,7 @@ export function ForecastDashboard({
     <div className="dashboard-shell">
       <header className="dashboard-topbar">
         <div className="topbar-content">
-          <a href="#overview" className="dashboard-brand"><span className="brand-mark" aria-hidden="true">K</span>kageco support</a>
+          <a href="#overview" className="dashboard-brand"><span className="brand-mark" aria-hidden="true">年</span>{APP_NAME}</a>
           <nav className="dashboard-nav" aria-label="ダッシュボード">
             <a href="#summary">年末の見込み</a>
             <a href="#monthly">月ごとの収支</a>

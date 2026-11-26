@@ -1,6 +1,7 @@
 import { logout, savePlan, saveTax, setPlanMode } from "@/app/forecast-actions";
 import { disconnectFreee, startFreee, syncFreee } from "@/app/freee-actions";
 import { ForecastDashboard } from "@/components/forecast-dashboard";
+import { APP_NAME } from "@/lib/app-name";
 import { getChartAccountItems } from "@/lib/chart-account-items";
 import { calculateForecast, FORECAST_YEAR } from "@/lib/forecast";
 import { canUseAccessToken, loadForecast } from "@/lib/forecast-store";
@@ -51,8 +52,9 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
       <main className="dashboard-login">
         <section className="dashboard-panel">
           <header className="panel-heading">
-            <h1>Kageco 年間収支予測</h1>
+            <h1>{APP_NAME}</h1>
             {configured && <p>freeeで事業所を選んでログインします。</p>}
+            {!configured && localSetup && <p>freeeでログインするには、初期設定が必要です。</p>}
           </header>
           {message && <p role="status">{message}</p>}
           {configured ? (
@@ -60,7 +62,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
               <button className="dashboard-button" type="submit">freeeでログイン</button>
             </form>
           ) : localSetup ? (
-            <a className="dashboard-button secondary" href="/freee/setup">ローカルのfreee接続を設定</a>
+            <a className="dashboard-button secondary" href="/freee/setup">freeeログインの設定方法を見る</a>
           ) : <p>freeeログインの設定を準備中です。</p>}
         </section>
       </main>
