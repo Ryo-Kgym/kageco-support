@@ -70,6 +70,10 @@ export async function connectionDetails() {
   return state.connection?.details;
 }
 
+function canUseAccessToken(tokens: FreeeTokens) {
+  return tokens.expiresAt > Date.now() + 120_000;
+}
+
 export async function loadForecast() {
   const stored = state.preferences.real;
   const connection = state.connection;
@@ -97,6 +101,7 @@ export async function loadForecast() {
     lastClosedMonthSetting: stored.lastClosedMonth,
     maxClosedMonth,
     connected: connection !== undefined,
+    canSyncWithoutRefresh: connection !== undefined && canUseAccessToken(connection.tokens),
     companyName: connection?.details.company_name ?? accounting?.snapshot.companyName ?? null,
     syncedAt: accounting?.syncedAt ?? null,
     consumptionMethodConfirmed: tax.consumptionMethod !== undefined,
@@ -167,7 +172,7 @@ export async function finishSync(id: string, version: string, snapshot?: Snapsho
 export async function activeTokens(version: string, refresh: (tokens: FreeeTokens) => Promise<FreeeTokens>) {
   const connection = state.connection;
   if (!connection || connection.details.version !== version) throw new Error("freee connection changed");
-  if (connection.tokens.expiresAt > Date.now() + 120_000) return connection.tokens;
+  if (canUseAccessToken(connection.tokens)) return connection.tokens;
 
   connection.refresh ??= Promise.resolve().then(async () => {
     const updated = await refresh(connection.tokens);

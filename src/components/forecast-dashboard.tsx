@@ -1,10 +1,13 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { MonthlyChart } from "@/components/monthly-chart";
+import { getAccountItemColors, summarizeAccountItems, type AccountItemColors, type MonthlyChartAccountItems } from "@/lib/chart-account-items";
 import { DEFAULT_TAX_FORM_AMOUNTS, type ForecastResult, type MonthAmounts, type MonthlyPlanMode, type TaxInputs } from "@/lib/forecast";
 
 type FormAction = (formData: FormData) => Promise<void>;
 type DashboardProps = {
   year: number;
   forecast: ForecastResult;
+  accountItems: MonthlyChartAccountItems;
   tax: TaxInputs;
   plans: MonthAmounts[];
   monthlyPlanMode: MonthlyPlanMode;
@@ -14,9 +17,11 @@ type DashboardProps = {
   connection: {
     configured: boolean;
     connected: boolean;
+    canSync: boolean;
     localSetup?: boolean;
     companyName: string | null;
     syncedAt: string | null;
+    accountItemsNeedSync: boolean;
     status?: string | null;
   };
   notice?: string;
@@ -61,33 +66,77 @@ function closedActualAmount(months: ForecastResult["months"], key: "sales" | "ex
   return total;
 }
 
-function ActualSummary({ forecast }: { forecast: ForecastResult }) {
+type AccountBreakdown = ReturnType<typeof summarizeAccountItems>["sales"];
+
+function AccountBreakdownList({ breakdown, itemColors, needsSync }: {
+  breakdown: AccountBreakdown;
+  itemColors: AccountItemColors;
+  needsSync: boolean;
+}) {
+  if (!breakdown) return null;
+  const { items, manual, unavailable, hasMissingMonths } = breakdown;
+  const previewCount = 4;
+  const accountRows = items.map(({ id, name, amount }) => (
+    <div key={id}>
+      <dt><span className="legend-swatch" style={{ "--bar-color": itemColors.get(id)?.color } as CSSProperties} aria-hidden="true" />{name}</dt>
+      <dd>{yen(amount)}</dd>
+    </div>
+  ));
+  const remainingCount = Math.max(0, accountRows.length - previewCount);
+
+  return (
+    <div className="account-breakdown">
+      <h4>勘定科目</h4>
+      {hasMissingMonths && <p>集計できた月の内訳</p>}
+      {items.length === 0 && manual === null && unavailable === null ? <p>該当する勘定科目なし</p> : (
+        <dl className="account-breakdown-amounts">
+          {accountRows.slice(0, previewCount)}
+          {manual !== null && <div><dt>手入力分（科目なし）</dt><dd>{yen(manual)}</dd></div>}
+          {unavailable !== null && <div><dt>科目未取得分</dt><dd>{yen(unavailable)}</dd></div>}
+        </dl>
+      )}
+      {remainingCount > 0 && (
+        <details className="account-breakdown-more" suppressHydrationWarning>
+          <summary>残り{remainingCount}科目を表示</summary>
+          <dl className="account-breakdown-amounts">{accountRows.slice(previewCount)}</dl>
+        </details>
+      )}
+      {unavailable !== null && needsSync && <p><a href="#freee">freee連携から内訳を取得</a></p>}
+    </div>
+  );
+}
+
+function ActualSummary({ forecast, accountItems, itemColors, needsSync }: Pick<DashboardProps, "forecast" | "accountItems"> & {
+  itemColors: AccountItemColors;
+  needsSync: boolean;
+}) {
   const closedMonths = forecast.months.filter(({ closed }) => closed);
   const lastMonth = closedMonths.at(-1)?.month ?? 0;
   const sales = closedActualAmount(closedMonths, "sales");
   const expenses = closedActualAmount(closedMonths, "expenses");
   const profit = sales === null || expenses === null ? null : sales - expenses;
-  const amounts = [
-    { label: "事業売上", amount: sales, missing: "未集計" },
-    { label: "事業経費", amount: expenses, missing: "未集計" },
-    { label: "事業利益", amount: profit, missing: "未集計" },
-    { label: "寄附済額（入力値）", amount: forecast.donationsPaid, missing: "未入力" },
-  ];
+  const breakdown = summarizeAccountItems(closedMonths, accountItems);
 
   return (
-    <section className="actual-summary" aria-labelledby="actual-summary-heading">
+    <section aria-labelledby="actual-summary-heading">
       <div className="section-heading">
-        <h2 id="actual-summary-heading">締め済みの実績</h2>
-        <p>{lastMonth === 0 ? "締め済み月なし" : lastMonth === 1 ? "1月の事業収支" : `1月〜${lastMonth}月の事業収支`}</p>
+        <div className="section-title">
+          <h2 id="actual-summary-heading">締め済みの実績</h2>
+          <p>{lastMonth === 0 ? "締め済み月なし" : lastMonth === 1 ? "1月の事業収支" : `1月〜${lastMonth}月の事業収支`}</p>
+        </div>
+        <dl className="summary-profit">
+          <dt>事業利益</dt>
+          <dd>{profit === null ? "未集計" : yen(profit)}</dd>
+        </dl>
       </div>
-      <dl className="actual-totals">
-        {amounts.map(({ label, amount, missing }) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd className={amount === null ? "unavailable" : undefined}>{amount === null ? missing : yen(amount)}</dd>
-          </div>
-        ))}
-      </dl>
+      <div className="financial-grid">
+        <MetricCard title="事業売上" amount={sales} unavailableLabel="未集計">
+          <AccountBreakdownList breakdown={breakdown.sales} itemColors={itemColors} needsSync={needsSync} />
+        </MetricCard>
+        <MetricCard title="支出（事業経費）" amount={expenses} unavailableLabel="未集計">
+          <AccountBreakdownList breakdown={breakdown.expenses} itemColors={itemColors} needsSync={needsSync} />
+        </MetricCard>
+      </div>
     </section>
   );
 }
@@ -96,22 +145,25 @@ function MetricCard({
   title,
   amount,
   caption,
+  children,
   details,
-  highlighted = false,
+  unavailableLabel = "未算出",
 }: {
   title: string;
   amount: number | null;
-  caption: string;
+  caption?: string;
+  children?: ReactNode;
   details?: Array<{ label: string; value: string }>;
-  highlighted?: boolean;
+  unavailableLabel?: string;
 }) {
   return (
-    <article className={`metric-card${highlighted ? " income" : ""}`}>
+    <article className="metric-card">
       <h3>{title}</h3>
       <p className={`metric-amount${amount === null ? " unavailable" : ""}`}>
-        {amount === null ? "未算出" : <>{yenFormat.format(amount)}<span className="amount-unit">円</span></>}
+        {amount === null ? unavailableLabel : <>{yenFormat.format(amount)}<span className="amount-unit">円</span></>}
       </p>
-      <p className="metric-caption">{caption}</p>
+      {caption && <p className="metric-caption">{caption}</p>}
+      {children}
       {details && (
         <dl className="metric-detail">
           {details.map(({ label, value }) => (
@@ -123,131 +175,54 @@ function MetricCard({
   );
 }
 
-function MonthlyChart({ forecast: { months: rows } }: { forecast: ForecastResult }) {
-  const amounts = rows.flatMap(({ forecast }) => [forecast.sales, forecast.expenses]);
-  const available = amounts.some((value) => value !== null);
-  const ceiling = Math.max(0, ...amounts.map((value) => value ?? 0));
-  const floor = Math.min(0, ...amounts.map((value) => value ?? 0));
-  const range = ceiling - floor || 1;
-  const baseline = -floor / range;
-  const chartStyle = { "--chart-zero": `${baseline * 100}%` } as CSSProperties;
-
-  const makeBar = (value: number | null, expense: boolean, source: string) => {
-    const className = `chart-bar${expense ? " bar-expenses" : ""}${source !== "actual" ? " is-forecast" : ""}`;
-    const bottom = (value !== null && value < 0 ? baseline + value / range : baseline) * 100;
-    const style = {
-      "--bar-height": `${Math.abs(value ?? 0) / range * 100}%`,
-      "--bar-bottom": `${bottom}%`,
-    } as CSSProperties;
-    return (
-      <span className="chart-bar-track">
-        {value !== null && <span className={className} style={style} />}
-      </span>
-    );
-  };
-
-  return (
-    <section className="dashboard-panel" id="monthly" aria-labelledby="monthly-heading">
-      <header className="panel-heading">
-        <h2 id="monthly-heading">月ごとの事業収支</h2>
-        <p>締め済みの実績と各月の着地見込み</p>
-      </header>
-      {available ? (
-        <>
-          <ul className="chart-legend" aria-hidden="true">
-            <li><span className="legend-swatch" />売上</li>
-            <li><span className="legend-swatch bar-expenses" />経費</li>
-            <li><span className="legend-swatch is-forecast" />見込み</li>
-          </ul>
-          <div className="chart-scroll" aria-hidden="true">
-            <div className="monthly-chart" style={chartStyle}>
-              {rows.map((row) => (
-                <div className="chart-month" key={row.month} title={`${row.month}月 売上 ${yen(row.forecast.sales)}・経費 ${yen(row.forecast.expenses)}`}>
-                  <div className="chart-month-bars">
-                    <span className="chart-baseline" />
-                    {makeBar(row.forecast.sales, false, row.sources.sales)}
-                    {makeBar(row.forecast.expenses, true, row.sources.expenses)}
-                  </div>
-                  <span className={`chart-month-label${row.closed ? "" : " is-projected"}`}>{row.month}月</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="chart-empty"><p>freeeから同期するか、月ごとの見込みを入力してください。</p></div>
-      )}
-      <details className="monthly-detail">
-        <summary>月別の金額を表示</summary>
-        <div className="table-scroll">
-          <table className="month-table" aria-label="事業売上と経費の月別実績・見込み">
-            <thead>
-              <tr>
-                <th scope="col">月</th>
-                <th scope="col" className="numeric-cell">売上実績</th>
-                <th scope="col" className="numeric-cell">経費実績</th>
-                <th scope="col" className="numeric-cell">売上見込み</th>
-                <th scope="col" className="numeric-cell">経費見込み</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ month, closed, actual, forecast }) => (
-                <tr key={month}>
-                  <th scope="row">{month}月</th>
-                  <td className="numeric-cell">{yen(actual.sales)}</td>
-                  <td className="numeric-cell">{yen(actual.expenses)}</td>
-                  <td className="numeric-cell">{closed ? "締め済み" : yen(forecast.sales)}</td>
-                  <td className="numeric-cell">{closed ? "締め済み" : yen(forecast.expenses)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
-    </section>
-  );
-}
-
 function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<DashboardProps, "connection" | "lastClosedMonth" | "actions">) {
-  const { connected, configured, localSetup, syncedAt } = connection;
+  const { connected, configured, localSetup, syncedAt, canSync } = connection;
   const connectionLabel = connected ? "接続済み" : "未接続";
   const syncTime = syncedAt ? timeFormat.format(new Date(syncedAt)) : "未同期";
+  const hasRetainedActuals = Boolean(syncedAt) && !connected;
+  const needsSetup = connected && !canSync;
+  const hasMessages = hasRetainedActuals || needsSetup || connection.accountItemsNeedSync || Boolean(connection.status);
 
   return (
-    <section className="dashboard-panel" id="freee" aria-labelledby="connection-heading">
-      <header className="panel-heading">
+    <section className="dashboard-panel connection-panel" id="freee" aria-labelledby="connection-heading">
+      <header className="connection-heading">
         <h2 id="connection-heading">freee会計</h2>
+        <p className={`connection-state${connected ? "" : " inactive"}`}>{connectionLabel}</p>
       </header>
-      <p className={`connection-state${connected ? "" : " inactive"}`}>{connectionLabel}</p>
       <dl className="connection-meta">
         <div><dt>事業所</dt><dd>{connection.companyName ?? "未選択"}</dd></div>
         <div><dt>最終同期</dt><dd>{syncTime}</dd></div>
         <div><dt>締め済み実績</dt><dd>{lastClosedMonth === 0 ? "未指定" : `${lastClosedMonth}月まで`}</dd></div>
       </dl>
-      {syncedAt && !connected && <p className="connection-message">取り込み済みの実績で見込みを計算できます。</p>}
-      {connected && !configured && (
-        <p className="connection-message">
-          {syncedAt ? "取り込み済みの実績で見込みを計算できます。再同期には" : "実績を同期するには"}
-          {localSetup ? <a href="/freee/setup">接続設定</a> : "接続設定"}が必要です。
-        </p>
-      )}
-      {connection.status && <p className="connection-message">{connection.status}</p>}
       {(connected || configured || localSetup) && (
         <div className="connection-actions">
-          {connected && configured && (
+          {canSync && (
             <form action={actions.sync}>
               <button className="dashboard-button" type="submit">freeeから同期</button>
             </form>
           )}
           {connected ? (
             <form action={actions.disconnectFreee}>
-              <button className={`dashboard-button${configured ? " secondary" : ""}`} type="submit">接続を解除</button>
+              <button className={`dashboard-button${canSync ? " secondary" : ""}`} type="submit">接続を解除</button>
             </form>
           ) : (
             <form action={actions.startFreee}>
               <button className="dashboard-button" type="submit">freeeに接続</button>
             </form>
           )}
+        </div>
+      )}
+      {hasMessages && (
+        <div className="connection-messages">
+          {hasRetainedActuals && <p className="connection-message">取り込み済みの実績で見込みを計算できます。</p>}
+          {needsSetup && (
+            <p className="connection-message">
+              {syncedAt ? "取り込み済みの実績で見込みを計算できます。再同期には" : "実績を同期するには"}
+              {localSetup ? <a href="/freee/setup">接続設定</a> : "接続設定"}が必要です。
+            </p>
+          )}
+          {connection.accountItemsNeedSync && <p className="connection-message">勘定科目別の内訳を表示するには、freeeから実績を再同期してください。</p>}
+          {connection.status && <p className="connection-message">{connection.status}</p>}
         </div>
       )}
     </section>
@@ -477,23 +452,25 @@ function ForecastGuidance({ missing, synced }: { missing: ForecastResult["missin
 }
 
 export function ForecastDashboard({
-  year, forecast, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions, canLogout,
+  year, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions, canLogout,
 }: DashboardProps) {
+  const itemColors = getAccountItemColors(accountItems);
+  const forecastBreakdown = summarizeAccountItems(forecast.months, accountItems);
+  const needsSync = connection.accountItemsNeedSync;
   return (
     <div className="dashboard-shell">
-      <aside className="dashboard-sidebar">
-        <a href="#overview" className="dashboard-brand"><span className="brand-mark" aria-hidden="true">K</span>kageco support</a>
-        <nav className="dashboard-nav" aria-label="ダッシュボード">
-          <a href="#overview">年末の見込み</a>
-          <a href="#monthly">月ごとの収支</a>
-          <a href="#settings">予測の前提</a>
-          <a href="#freee">freee連携</a>
-        </nav>
-        <div className="dashboard-sidebar-footer">
-          <p>{year}年分</p>
-          {canLogout && <form action={actions.logout}><button type="submit" className="sidebar-action">ログアウト</button></form>}
+      <header className="dashboard-topbar">
+        <div className="topbar-content">
+          <a href="#overview" className="dashboard-brand"><span className="brand-mark" aria-hidden="true">K</span>kageco support</a>
+          <nav className="dashboard-nav" aria-label="ダッシュボード">
+            <a href="#summary">年末の見込み</a>
+            <a href="#monthly">月ごとの収支</a>
+            <a href="#settings">予測の前提</a>
+            <a href="#freee">freee連携</a>
+          </nav>
+          {canLogout && <form className="topbar-session" action={actions.logout}><button type="submit" className="dashboard-button secondary">ログアウト</button></form>}
         </div>
-      </aside>
+      </header>
       <main id="overview" className="dashboard-main">
         <header className="dashboard-header">
           <p className="dashboard-period">{year}年1月〜12月</p>
@@ -503,18 +480,26 @@ export function ForecastDashboard({
             : "freeeから実績を同期し、給与・控除などを入力して「年末の見込みを計算」を押してください。"}</p>
         </header>
         {notice && <p className="dashboard-notice" role="status">{notice}</p>}
-        <ActualSummary forecast={forecast} />
-        <section aria-labelledby="summary-heading">
+        <ActualSummary forecast={forecast} accountItems={accountItems} itemColors={itemColors} needsSync={needsSync} />
+        <section id="summary" aria-labelledby="summary-heading">
           <div className="section-heading">
-            <h2 id="summary-heading">年末の見込み</h2>
-            <p>締め済みの実績と未締め月の見込みから試算</p>
+            <div className="section-title">
+              <h2 id="summary-heading">年末の見込み</h2>
+              <p>締め済みの実績と未締め月の見込みから試算</p>
+            </div>
           </div>
-          <div className="metrics-grid">
-            <MetricCard title="年収・事業売上" amount={forecast.sales} caption="事業売上の年額" highlighted details={[
+          <div className="financial-grid">
+            <MetricCard title="事業売上" amount={forecast.sales} details={[
               { label: "給与・賞与", value: yen(forecast.salaryGross) },
               { label: "事業利益", value: yen(forecast.businessProfit) },
-            ]} />
-            <MetricCard title="支出" amount={forecast.expenses} caption="事業経費の年額" />
+            ]}>
+              <AccountBreakdownList breakdown={forecastBreakdown.sales} itemColors={itemColors} needsSync={needsSync} />
+            </MetricCard>
+            <MetricCard title="支出（事業経費）" amount={forecast.expenses}>
+              <AccountBreakdownList breakdown={forecastBreakdown.expenses} itemColors={itemColors} needsSync={needsSync} />
+            </MetricCard>
+          </div>
+          <div className="metrics-grid">
             <MetricCard title="ふるさと納税" amount={forecast.donationLimit} caption="寄附上限の目安" details={[
               { label: "残り枠", value: yen(forecast.donationRemaining) },
               { label: "寄附予定", value: yen(forecast.donationsPlanned) },
@@ -527,7 +512,7 @@ export function ForecastDashboard({
           <ForecastGuidance missing={forecast.missing} synced={connection.syncedAt !== null} />
         </section>
         <div className="dashboard-overview">
-          <MonthlyChart forecast={forecast} />
+          <MonthlyChart rows={forecast.months} accountItems={accountItems} itemColors={itemColors} />
           <ConnectionPanel connection={connection} lastClosedMonth={lastClosedMonth} actions={actions} />
         </div>
         <section id="settings" className="dashboard-settings" aria-labelledby="settings-heading">
