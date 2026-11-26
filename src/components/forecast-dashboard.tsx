@@ -254,10 +254,27 @@ function ForecastAmountCalculation({ forecast, amountKey }: Pick<DashboardProps,
     steps.push({ label: "見込みの基準額", expression: "未算出（利用できる締め済み実績なし）" });
   }
 
+  const ranges: {
+    firstMonth: number;
+    lastMonth: number;
+    amount: number | null;
+    source: (typeof remaining)[number]["sources"]["sales"];
+  }[] = [];
   for (const { month, forecast: amounts, sources } of remaining) {
     const source = sources[amountKey];
+    const amount = amounts[amountKey];
+    const previous = ranges.at(-1);
+    if (source === "average" && previous?.source === source && previous.amount === amount && previous.lastMonth + 1 === month) {
+      previous.lastMonth = month;
+    } else {
+      ranges.push({ firstMonth: month, lastMonth: month, amount, source });
+    }
+  }
+  for (const { firstMonth, lastMonth, amount, source } of ranges) {
     const sourceLabel = source === "average" ? "（月平均）" : source === "plan" ? "（手入力）" : "";
-    steps.push({ label: `${month}月の見込み${sourceLabel}`, expression: yen(amounts[amountKey]) });
+    const spansMonths = firstMonth !== lastMonth;
+    const period = spansMonths ? `${firstMonth}〜${lastMonth}月` : `${firstMonth}月`;
+    steps.push({ label: `${period}の見込み${sourceLabel}`, expression: spansMonths ? `各月 ${yen(amount)}` : yen(amount) });
   }
 
   const remainingTotal = remaining.reduce<number | null>((total, row) => {
