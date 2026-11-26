@@ -6,6 +6,7 @@ type AmountSource = "actual" | "plan" | "average" | "missing";
 
 export type AmountValues = Record<AmountKey, number | null>;
 export type MonthAmounts = { month: number } & Partial<AmountValues>;
+export type MonthlyPlanMode = "trend" | "manual";
 
 export interface ForecastMonth {
   month: number;

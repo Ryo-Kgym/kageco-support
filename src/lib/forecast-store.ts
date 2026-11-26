@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { FORECAST_YEAR, type MonthAmounts, type TaxInputs } from "./forecast";
+import { FORECAST_YEAR, type MonthAmounts, type MonthlyPlanMode, type TaxInputs } from "./forecast";
 import type { FreeeAccountingSnapshot, FreeeTokens } from "./freee";
 
 type Mode = "real" | "demo";
@@ -43,6 +43,7 @@ const demoPlans: Record<string, MonthAmounts> = {
 interface Preferences {
   tax?: TaxInputs;
   plans: Record<string, MonthAmounts | null>;
+  monthlyPlanMode?: MonthlyPlanMode;
   lastClosedMonth: number | null;
 }
 
@@ -78,7 +79,13 @@ export async function savePreferences(mode: Mode, tax: TaxInputs, lastClosedMont
 }
 
 export async function saveMonthlyPlan(mode: Mode, month: number, plan: MonthAmounts | null) {
-  state.preferences[mode].plans[month] = plan;
+  const stored = state.preferences[mode];
+  stored.plans[month] = plan;
+  stored.monthlyPlanMode ??= "manual";
+}
+
+export async function saveMonthlyPlanMode(mode: Mode, monthlyPlanMode: MonthlyPlanMode) {
+  state.preferences[mode].monthlyPlanMode = monthlyPlanMode;
 }
 
 export async function connectionDetails() {
@@ -87,37 +94,45 @@ export async function connectionDetails() {
 
 export async function loadForecast(mode: Mode) {
   const stored = state.preferences[mode];
+  const connection = state.connection;
+  const accounting = connection?.accounting;
+  const maxClosedMonth = mode === "demo" ? 9
+    : Math.min(accounting?.snapshot.closedThroughMonth ?? 0, currentForecastDate().latestClosedMonth);
+  const lastClosedMonth = Math.min(stored.lastClosedMonth ?? maxClosedMonth, maxClosedMonth);
+  const planEntries = mode === "demo" ? { ...demoPlans, ...stored.plans } : stored.plans;
+  const plans = Object.values(planEntries).filter((plan) => plan !== null);
+  const hasSavedFuturePlan = Object.values(stored.plans).some((plan) => plan !== null && plan.month > lastClosedMonth);
+  const monthlyPlanMode: MonthlyPlanMode = stored.monthlyPlanMode ?? (hasSavedFuturePlan ? "manual" : "trend");
+
   if (mode === "demo") {
-    const plans = { ...demoPlans, ...stored.plans };
     return {
       actuals: demoMonths,
-      plans: Object.values(plans).filter((plan) => plan !== null),
+      plans,
+      monthlyPlanMode,
       tax: stored.tax ?? demoTax,
-      lastClosedMonth: stored.lastClosedMonth ?? 9,
+      lastClosedMonth,
       lastClosedMonthSetting: stored.lastClosedMonth,
-      maxClosedMonth: 9,
+      maxClosedMonth,
       consumptionMethodConfirmed: true,
       companyName: null,
       syncedAt: null,
     };
   }
 
-  const connection = state.connection;
-  const accounting = connection?.accounting;
   const settings = accounting?.snapshot.taxSettings;
   const tax: TaxInputs = stored.tax ?? {};
-  const maxClosedMonth = Math.min(accounting?.snapshot.closedThroughMonth ?? 0, currentForecastDate().latestClosedMonth);
   const simplifiedRates = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
   return {
     actuals: accounting?.snapshot.months ?? [],
-    plans: Object.values(stored.plans).filter((plan) => plan !== null),
+    plans,
+    monthlyPlanMode,
     tax: {
       ...tax,
       consumptionMethod: tax.consumptionMethod ?? settings?.method ?? undefined,
       simplifiedPurchaseRate: tax.simplifiedPurchaseRate ?? (settings?.simpleBusinessCategory
         ? simplifiedRates[settings.simpleBusinessCategory - 1] : undefined),
     },
-    lastClosedMonth: Math.min(stored.lastClosedMonth ?? maxClosedMonth, maxClosedMonth),
+    lastClosedMonth,
     lastClosedMonthSetting: stored.lastClosedMonth,
     maxClosedMonth,
     companyName: connection?.details.company_name ?? null,

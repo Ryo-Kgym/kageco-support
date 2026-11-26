@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { DEFAULT_TAX_FORM_AMOUNTS, type ForecastResult, type MonthAmounts, type TaxInputs } from "@/lib/forecast";
+import { DEFAULT_TAX_FORM_AMOUNTS, type ForecastResult, type MonthAmounts, type MonthlyPlanMode, type TaxInputs } from "@/lib/forecast";
 
 type FormAction = (formData: FormData) => Promise<void>;
 type DashboardProps = {
@@ -8,6 +8,7 @@ type DashboardProps = {
   forecast: ForecastResult;
   tax: TaxInputs;
   plans: MonthAmounts[];
+  monthlyPlanMode: MonthlyPlanMode;
   lastClosedMonth: number;
   maxClosedMonth: number;
   lastClosedMonthSetting: number | null;
@@ -24,6 +25,7 @@ type DashboardProps = {
     sync: FormAction;
     saveTax: FormAction;
     savePlan: FormAction;
+    setPlanMode: FormAction;
     setDemo: FormAction;
     logout: FormAction;
   };
@@ -334,34 +336,73 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
   );
 }
 
-function MonthlyPlans({ plans, lastClosedMonth, action }: { plans: MonthAmounts[]; lastClosedMonth: number; action: FormAction }) {
+function MonthlyPlans({ plans, monthlyPlanMode, forecast, actions }: Pick<DashboardProps, "plans" | "monthlyPlanMode" | "forecast"> & {
+  actions: Pick<DashboardProps["actions"], "savePlan" | "setPlanMode">;
+}) {
+  const remainingMonths = forecast.months.filter(({ closed }) => !closed);
+  const trend = monthlyPlanMode === "trend";
+
   return (
     <section className="dashboard-panel" id="monthly-plans" aria-labelledby="plans-heading">
       <header className="panel-heading">
         <h2 id="plans-heading">月ごとの見込み</h2>
-        <p>残りの月に予定がある場合は、その月の着地額を入力します。空欄で自動見積もりに戻ります。</p>
+        <p>{remainingMonths.length === 0
+          ? "すべての月が締め済みです。"
+          : trend
+            ? "締め済みの実績から、直近最大3か月の平均で見積もります。"
+            : "月ごとの着地額を入力します。空欄の項目は推移から見積もります。"}</p>
       </header>
-      <div className="plan-list">
-        {months.filter((month) => month > lastClosedMonth).map((month) => {
-          const plan = plans.find((entry) => entry.month === month);
-          return (
-            <details className="plan-edit" key={month}>
-              <summary>{month}月{plan && <span className="plan-state">入力済み</span>}</summary>
-              <form action={action} className="editable-form" aria-label={`${month}月の見込みを編集`}>
-                <input type="hidden" name="month" value={month} />
-                <div className="field-grid">
-                  <AmountField name="sales" label="事業売上" value={plan?.sales} signed />
-                  <AmountField name="expenses" label="事業経費" value={plan?.expenses} signed />
-                  <AmountField name="salesTax" label="売上に係る消費税" value={plan?.salesTax} signed />
-                  <AmountField name="deductiblePurchaseTax" label="控除対象の仕入税額" value={plan?.deductiblePurchaseTax} signed />
-                </div>
-                <div className="form-footer"><button className="dashboard-button secondary" type="submit">{month}月の見込みを保存</button></div>
-              </form>
-            </details>
-          );
-        })}
-        {lastClosedMonth === 12 && <p className="form-hint">全ての月が締め済みです。</p>}
-      </div>
+      {remainingMonths.length > 0 && (
+        <>
+          <form action={actions.setPlanMode} className="plan-mode" aria-label="見込みの入力方法">
+            <button className={`dashboard-button${trend ? "" : " secondary"}`} type="submit" name="monthlyPlanMode" value="trend" aria-pressed={trend}>推移モード</button>
+            <button className={`dashboard-button${trend ? " secondary" : ""}`} type="submit" name="monthlyPlanMode" value="manual" aria-pressed={!trend}>手入力</button>
+          </form>
+          {trend ? (
+            <div className="table-scroll">
+              <table className="month-table" aria-label="推移モードの月別の見込み">
+                <thead>
+                  <tr>
+                    <th scope="col">月</th>
+                    <th scope="col" className="numeric-cell">事業売上</th>
+                    <th scope="col" className="numeric-cell">事業経費</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {remainingMonths.map(({ month, forecast: amounts }) => (
+                    <tr key={month}>
+                      <th scope="row">{month}月</th>
+                      <td className="numeric-cell">{yen(amounts.sales)}</td>
+                      <td className="numeric-cell">{yen(amounts.expenses)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="plan-list">
+              {remainingMonths.map(({ month }) => {
+                const plan = plans.find((entry) => entry.month === month);
+                return (
+                  <details className="plan-edit" key={month}>
+                    <summary>{month}月{plan && <span className="plan-state">入力済み</span>}</summary>
+                    <form action={actions.savePlan} className="editable-form" aria-label={`${month}月の見込みを編集`}>
+                      <input type="hidden" name="month" value={month} />
+                      <div className="field-grid">
+                        <AmountField name="sales" label="事業売上" value={plan?.sales} signed />
+                        <AmountField name="expenses" label="事業経費" value={plan?.expenses} signed />
+                        <AmountField name="salesTax" label="売上に係る消費税" value={plan?.salesTax} signed />
+                        <AmountField name="deductiblePurchaseTax" label="控除対象の仕入税額" value={plan?.deductiblePurchaseTax} signed />
+                      </div>
+                      <div className="form-footer"><button className="dashboard-button secondary" type="submit">{month}月の見込みを保存</button></div>
+                    </form>
+                  </details>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }
@@ -391,7 +432,7 @@ function MissingInputs({ missing }: { missing: ForecastResult["missing"] }) {
 }
 
 export function ForecastDashboard({
-  year, isDemo, forecast, tax, plans, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions, canLogout,
+  year, isDemo, forecast, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions, canLogout,
 }: DashboardProps) {
   return (
     <div className="dashboard-shell">
@@ -457,7 +498,7 @@ export function ForecastDashboard({
           <div className="section-heading"><h2 id="settings-heading">予測の前提</h2></div>
           <div className="settings-grid">
             <TaxForm tax={tax} lastClosedMonthSetting={lastClosedMonthSetting} maxClosedMonth={maxClosedMonth} action={actions.saveTax} />
-            <MonthlyPlans plans={plans} lastClosedMonth={lastClosedMonth} action={actions.savePlan} />
+            <MonthlyPlans plans={plans} monthlyPlanMode={monthlyPlanMode} forecast={forecast} actions={actions} />
           </div>
         </section>
       </main>
