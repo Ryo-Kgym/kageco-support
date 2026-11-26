@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const config: NextConfig = {
+  agentRules: false,
+  devIndicators: false,
+  logging: { incomingRequests: { ignore: [/^\/freee\/callback(?:\?|$)/] } },
   poweredByHeader: false,
   serverExternalPackages: ["@electric-sql/pglite", "pg"],
   async headers() {
