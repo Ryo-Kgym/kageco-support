@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { DEFAULT_OPTIONAL_TAX_AMOUNTS, type ForecastResult, type MonthAmounts, type TaxInputs } from "@/lib/forecast";
+import { DEFAULT_TAX_FORM_AMOUNTS, type ForecastResult, type MonthAmounts, type TaxInputs } from "@/lib/forecast";
 
 type FormAction = (formData: FormData) => Promise<void>;
 type DashboardProps = {
@@ -242,7 +242,7 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
           <legend>収入と控除</legend>
           <div className="field-grid">
             <AmountField name="salaryGross" label="給与・賞与の年額" value={tax.salaryGross} />
-            <AmountField name="blueDeduction" label="青色申告特別控除" value={tax.blueDeduction} />
+            <AmountField name="blueDeduction" label="青色申告特別控除" value={tax.blueDeduction ?? DEFAULT_TAX_FORM_AMOUNTS.blueDeduction} />
             <AmountField name="socialInsurance" label="社会保険料控除" value={tax.socialInsurance} />
           </div>
         </fieldset>
@@ -309,8 +309,8 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
             <fieldset className="form-group">
               <legend>所得税の控除と精算</legend>
               <div className="field-grid">
-                <AmountField name="otherIncomeDeductions" label="その他の所得控除" value={tax.otherIncomeDeductions ?? DEFAULT_OPTIONAL_TAX_AMOUNTS.otherIncomeDeductions} />
-                <AmountField name="incomeTaxCredit" label="所得税の税額控除" value={tax.incomeTaxCredit ?? DEFAULT_OPTIONAL_TAX_AMOUNTS.incomeTaxCredit} />
+                <AmountField name="otherIncomeDeductions" label="その他の所得控除" value={tax.otherIncomeDeductions ?? DEFAULT_TAX_FORM_AMOUNTS.otherIncomeDeductions} />
+                <AmountField name="incomeTaxCredit" label="所得税の税額控除" value={tax.incomeTaxCredit ?? DEFAULT_TAX_FORM_AMOUNTS.incomeTaxCredit} />
                 <AmountField name="withheldIncomeTax" label="源泉徴収税額" value={tax.withheldIncomeTax} />
                 <AmountField name="prepaidIncomeTax" label="所得税の予定納税額" value={tax.prepaidIncomeTax} />
               </div>
@@ -319,8 +319,8 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
             <fieldset className="form-group">
               <legend>ふるさと納税と住民税</legend>
               <div className="field-grid">
-                <AmountField name="donationsPlanned" label="今後の寄附予定額" value={tax.donationsPlanned ?? DEFAULT_OPTIONAL_TAX_AMOUNTS.donationsPlanned} />
-                <AmountField name="otherResidentDeductions" label="住民税のその他の所得控除" value={tax.otherResidentDeductions ?? DEFAULT_OPTIONAL_TAX_AMOUNTS.otherResidentDeductions} />
+                <AmountField name="donationsPlanned" label="今後の寄附予定額" value={tax.donationsPlanned ?? DEFAULT_TAX_FORM_AMOUNTS.donationsPlanned} />
+                <AmountField name="otherResidentDeductions" label="住民税のその他の所得控除" value={tax.otherResidentDeductions ?? DEFAULT_TAX_FORM_AMOUNTS.otherResidentDeductions} />
                 <AmountField name="residentPersonalDeductionDifference" label="基礎控除以外の人的控除差" value={tax.residentPersonalDeductionDifference} />
                 <AmountField name="residentAdjustmentDeduction" label="住民税の調整控除（任意）" value={tax.residentAdjustmentDeduction} />
               </div>

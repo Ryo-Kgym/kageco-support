@@ -34,7 +34,8 @@ export interface TaxInputs {
   twoTenthsEligible?: boolean;
 }
 
-export const DEFAULT_OPTIONAL_TAX_AMOUNTS = {
+export const DEFAULT_TAX_FORM_AMOUNTS = {
+  blueDeduction: 650_000,
   otherIncomeDeductions: 0,
   otherResidentDeductions: 0,
   incomeTaxCredit: 0,
