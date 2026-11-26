@@ -5,7 +5,9 @@ import {
   calculateTrend,
   FORECAST_YEAR,
   incomeBasicDeduction2026,
+  incomeBasicDeductionForYear,
   salaryIncome2026,
+  salaryIncomeForYear,
 } from "../src/lib/forecast";
 import type { MonthAmounts, TaxInputs } from "../src/lib/forecast";
 
@@ -154,6 +156,65 @@ test("uses the 2026 salary lookup and basic deduction boundaries", () => {
   assert.equal(incomeBasicDeduction2026(6_550_001), 620_000);
 });
 
+test("uses the historical salary lookup and basic deduction boundaries", () => {
+  assert.equal(salaryIncomeForYear(2024, 550_999), 0);
+  assert.equal(salaryIncomeForYear(2024, 1_619_999), 1_069_000);
+  assert.equal(salaryIncomeForYear(2024, 1_628_000), 1_076_800);
+  assert.equal(salaryIncomeForYear(2025, 650_999), 0);
+  assert.equal(salaryIncomeForYear(2025, 651_000), 1_000);
+  assert.equal(salaryIncomeForYear(2025, 1_903_999), 1_250_000);
+
+  assert.equal(incomeBasicDeductionForYear(2024, 24_000_000), 480_000);
+  assert.equal(incomeBasicDeductionForYear(2024, 24_000_001), 320_000);
+  assert.equal(incomeBasicDeductionForYear(2025, 1_320_000), 950_000);
+  assert.equal(incomeBasicDeductionForYear(2025, 1_320_001), 880_000);
+  assert.equal(incomeBasicDeductionForYear(2025, 6_550_000), 630_000);
+  assert.equal(incomeBasicDeductionForYear(2025, 6_550_001), 580_000);
+});
+
+test("calculates historical income tax with each year's rules and the same consumption tax", () => {
+  const actuals = allMonths({ sales: 2_000_000, expenses: 200_000, salesTax: 200_000 }).map((row) => ({
+    ...row,
+    taxableSalesByRate: row.month === 1 ? { 10: 2_000_000 } : {},
+  }));
+  const input = {
+    lastClosedMonth: 12,
+    actuals,
+    tax: {
+      ...supportedTaxInputs, salaryGross: 1_000_000, fixedTaxReductionDependents: 1,
+      consumptionMethod: "two-tenths" as const, twoTenthsEligible: true,
+    },
+  };
+  const year2024 = calculateForecast({ ...input, year: 2024 });
+  const year2025 = calculateForecast({ ...input, year: 2025 });
+
+  assert.equal(year2024.incomeTaxDetails?.taxableIncome, 1_770_000);
+  assert.equal(year2024.incomeTaxDetails.fixedTaxReduction, 60_000);
+  assert.equal(year2024.incomeTax, 29_098);
+  assert.equal(year2024.donationLimitDetails?.taxableIncome, 1_820_000);
+  assert.equal(year2025.incomeTaxDetails?.taxableIncome, 1_270_000);
+  assert.equal(year2025.incomeTaxDetails.fixedTaxReduction, undefined);
+  assert.equal(year2025.incomeTax, 64_833);
+  assert.equal(year2025.donationLimitDetails?.taxableIncome, 1_720_000);
+
+  for (const result of [year2024, year2025]) {
+    assert.deepEqual(result.taxableSalesByRate, { 10: 2_000_000 });
+    assert.equal(result.consumptionTax, 40_000);
+  }
+});
+
+test("caps the 2024 fixed tax reduction after regular credits and uses the income eligibility limit", () => {
+  const input = { year: 2024, lastClosedMonth: 12, tax: { ...supportedTaxInputs, incomeTaxCredit: 10_000 } };
+  const capped = calculateForecast({ ...input, actuals: allMonths({ sales: 1_000_000 }) });
+  assert.equal(capped.incomeTaxDetails?.fixedTaxReduction, 16_000);
+  assert.equal(capped.incomeTax, 0);
+
+  const eligible = calculateForecast({ ...input, actuals: allMonths({ sales: 18_050_000 }) });
+  const ineligible = calculateForecast({ ...input, actuals: allMonths({ sales: 18_050_001 }) });
+  assert.equal(eligible.incomeTaxDetails?.fixedTaxReduction, 30_000);
+  assert.equal(ineligible.incomeTaxDetails?.fixedTaxReduction, 0);
+});
+
 test("forecasts income independently of tax deductions and uses the same total when estimating tax", () => {
   const input = {
     year: FORECAST_YEAR,
@@ -204,12 +265,19 @@ test("computes estimated annual income tax and final amount after withholding an
     totalIncome: 7_120_999,
     basicDeduction: 620_000,
     socialInsurance: 0,
+    smallBusinessMutualAidDeduction: 0,
+    medicalExpenseDeduction: 0,
+    casualtyLossDeduction: 0,
+    itemizedDeductions: {},
     otherIncomeDeductions: 0,
+    otherEligibleDonations: 0,
+    eligibleDonations: 0,
     donationDeduction: 0,
     taxableIncome: 6_500_000,
     rate: 20,
     bracketDeduction: 427_500,
     taxCredit: 0,
+    housingLoanTaxCredit: 0,
     baseTax: 872_500,
     reconstructionRate: 2.1,
     reconstructionTax: 18_322,
@@ -235,11 +303,16 @@ test("donation limit uses resident income levy and tax return donations lower na
     totalIncome: 4_360_000,
     basicDeduction: 430_000,
     socialInsurance: 900_000,
+    smallBusinessMutualAidDeduction: 0,
+    medicalExpenseDeduction: 0,
+    casualtyLossDeduction: 0,
+    itemizedDeductions: {},
     otherDeductions: 0,
     taxableIncome: 3_030_000,
     cityTax: 181_800,
     prefectureTax: 121_200,
     incomeExempt: false,
+    incomeExemptionLimit: 450_000,
     personalDeductionDifference: 50_000,
     adjustmentBase: 50_000,
     adjustmentDeduction: 2_500,
@@ -250,6 +323,100 @@ test("donation limit uses resident income levy and tax return donations lower na
     estimatedLimit: 77_322,
     donationIncomeCap: 1_308_000,
   });
+});
+
+test("deducts mutual aid contributions and medical expenses from both tax bases before rounding", () => {
+  const input = {
+    year: FORECAST_YEAR,
+    lastClosedMonth: 12,
+    actuals: allMonths({ sales: 7_120_999, salesTax: 120_000, deductiblePurchaseTax: 40_000 }),
+    tax: {
+      ...supportedTaxInputs,
+      otherIncomeDeductions: 12_345,
+      otherResidentDeductions: 23_456,
+      residentPersonalDeductionDifference: 0,
+      consumptionMethod: "general" as const,
+    },
+  };
+  const baseline = calculateForecast(input);
+  const deductions = { smallBusinessMutualAidDeduction: 240_600, medicalExpenseDeduction: 100_550 };
+  const result = calculateForecast({ ...input, tax: { ...input.tax, ...deductions } });
+
+  assert.equal(baseline.incomeTaxDetails?.taxableIncome, 6_488_000);
+  assert.equal(baseline.donationLimitDetails?.taxableIncome, 6_667_000);
+  assert.equal(result.incomeTaxDetails?.taxableIncome, 6_147_000);
+  assert.equal(result.donationLimitDetails?.taxableIncome, 6_326_000);
+  assert.equal(result.incomeTaxDetails?.smallBusinessMutualAidDeduction, deductions.smallBusinessMutualAidDeduction);
+  assert.equal(result.incomeTaxDetails?.medicalExpenseDeduction, deductions.medicalExpenseDeduction);
+  assert.equal(result.donationLimitDetails?.smallBusinessMutualAidDeduction, deductions.smallBusinessMutualAidDeduction);
+  assert.equal(result.donationLimitDetails?.medicalExpenseDeduction, deductions.medicalExpenseDeduction);
+  assert.equal(result.incomeTax, 818_739);
+  assert.ok((result.donationLimit ?? Infinity) < (baseline.donationLimit ?? 0));
+  assert.deepEqual(result.incomeForecast, baseline.incomeForecast);
+  assert.equal(baseline.consumptionTax, 80_000);
+  assert.equal(result.consumptionTax, baseline.consumptionTax);
+});
+
+test("uses tax-specific deductions, shared casualty losses, and statutory personal differences", () => {
+  const input = {
+    year: FORECAST_YEAR,
+    lastClosedMonth: 12,
+    actuals: allMonths({ sales: 7_120_999 }),
+    tax: {
+      ...supportedTaxInputs,
+      casualtyLossDeduction: 20_000,
+      incomeDeductions: { lifeInsurance: 120_000, earthquakeInsurance: 45_000, dependent: 380_000 },
+      residentDeductions: { lifeInsurance: 70_000, earthquakeInsurance: 22_500, dependent: 330_000 },
+      residentDependentCount: 1,
+    },
+  };
+  const missingDifference = calculateForecast(input);
+  assert.equal(missingDifference.incomeTaxDetails?.taxableIncome, 5_935_000);
+  assert.equal(missingDifference.donationLimit, null);
+  assert.ok(missingDifference.missing.donationLimit.includes("人的控除差額（基礎控除分を除く）"));
+
+  const result = calculateForecast({ ...input, tax: { ...input.tax, residentPersonalDeductionDifference: 50_000 } });
+  assert.deepEqual(result.incomeTaxDetails?.itemizedDeductions, input.tax.incomeDeductions);
+  assert.deepEqual(result.donationLimitDetails?.itemizedDeductions, input.tax.residentDeductions);
+  assert.equal(result.donationLimitDetails?.casualtyLossDeduction, 20_000);
+  assert.equal(result.donationLimitDetails?.taxableIncome, 6_248_000);
+  assert.equal(result.donationLimitDetails?.personalDeductionDifference, 100_000);
+  assert.equal(result.donationLimitDetails?.incomeExemptionLimit, 1_120_000);
+
+  const insuranceOnly = calculateForecast({
+    ...input, tax: { ...input.tax, residentDeductions: { lifeInsurance: 70_000 } },
+  });
+  assert.equal(insuranceOnly.donationLimitDetails?.taxableIncome, 6_600_000);
+});
+
+test("combines eligible donations for one threshold and deducts housing credits before reconstruction tax", () => {
+  const input = {
+    year: FORECAST_YEAR,
+    lastClosedMonth: 12,
+    actuals: allMonths({ sales: 7_120_999 }),
+    tax: {
+      ...supportedTaxInputs, donationMethod: "one-stop" as const, donationsPaid: 50_000, donationsPlanned: 10_000,
+      otherEligibleDonations: 30_000, incomeTaxCredit: 50_000, housingLoanTaxCredit: 100_000,
+    },
+  };
+  const result = calculateForecast(input);
+  assert.equal(result.incomeTaxDetails?.eligibleDonations, 90_000);
+  assert.equal(result.incomeTaxDetails?.donationDeduction, 88_000);
+  assert.equal(result.incomeTaxDetails?.taxableIncome, 6_412_000);
+  assert.equal(result.incomeTaxDetails?.housingLoanTaxCredit, 100_000);
+  assert.equal(result.incomeTaxDetails?.baseTax, 704_900);
+  assert.equal(result.incomeTaxDetails?.reconstructionTax, 14_802);
+  assert.equal(result.incomeTax, 719_702);
+  assert.equal(result.donationLimit, null);
+
+  const capped = calculateForecast({ ...input, tax: { ...input.tax, otherEligibleDonations: 6_000_000 } });
+  assert.equal(capped.incomeTaxDetails?.donationDeduction, 2_846_399);
+
+  const housingOnly = calculateForecast({
+    ...input,
+    tax: { ...supportedTaxInputs, donationMethod: "return", housingLoanTaxCredit: 100_000 },
+  });
+  assert.ok(housingOnly.missing.donationLimit.includes("税額控除のある場合の寄附上限は試算対象外"));
 });
 
 test("uses Beppu's individual income levy exemption and applicable adjustment deductions", () => {
@@ -264,6 +431,19 @@ test("uses Beppu's individual income levy exemption and applicable adjustment de
   assert.equal(nearExemption.donationLimitDetails?.incomeExempt, false);
   assert.equal(nearExemption.donationLimitDetails.adjustmentDeduction, 1_050);
   assert.equal(nearExemption.donationLimitDetails.incomeLevy, 1_050);
+
+  const familyExempt = calculateForecast({
+    ...input, actuals: allMonths({ sales: 1_120_000 }), tax: { ...input.tax, residentDependentCount: 1 },
+  });
+  assert.equal(familyExempt.donationLimitDetails?.incomeExemptionLimit, 1_120_000);
+  assert.equal(familyExempt.donationLimitDetails?.incomeExempt, true);
+  assert.equal(familyExempt.donationLimit, 0);
+
+  const personalExempt = calculateForecast({
+    ...input, actuals: allMonths({ sales: 1_350_000 }), tax: { ...input.tax, residentPersonalExemption: true },
+  });
+  assert.equal(personalExempt.donationLimitDetails?.incomeExemptionLimit, 1_350_000);
+  assert.equal(personalExempt.donationLimitDetails?.incomeExempt, true);
 
   const deduction = calculateForecast({
     ...input, actuals: allMonths({ sales: 24_200_000 }), tax: { ...input.tax, socialInsurance: 22_000_000 },

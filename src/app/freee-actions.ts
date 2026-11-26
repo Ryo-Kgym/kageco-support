@@ -2,14 +2,14 @@
 
 import { headers } from "next/headers";
 import { redirect, RedirectType } from "next/navigation";
-import { FORECAST_YEAR } from "@/lib/forecast";
 import { FREEE_ISSUER, FreeeApiError, exchangeFreeeCode, freeeAuthorizationUrl, getFreeeCompany, refreshFreeeTokens, revokeFreeeTokens, syncFreeeAccounting } from "@/lib/freee";
 import { activeTokens, beginSync, closeForecastSession, currentForecastDate, finishSync } from "@/lib/forecast-store";
 import { freeeSettings } from "@/lib/freee-settings";
+import { forecastLocation, isForecastYear } from "@/lib/forecast-year";
 import { authConfigured, beginFreeeLogin, clearFreeeSession, consumeFreeeLogin, createFreeeSession, currentSession, getSessionTokens, requireSession, saveSessionTokens } from "@/lib/security";
 
-function returnHome(notice: string): never {
-  redirect(`/?notice=${notice}#freee`);
+function returnHome(notice: string, year?: number): never {
+  redirect(year === undefined ? `/?notice=${notice}#freee` : forecastLocation(year, notice, "freee"));
 }
 
 function returnFromLogin(notice: string): never {
@@ -73,15 +73,16 @@ export async function disconnectFreee(_data: FormData) {
   returnHome(revoked ? "disconnected" : "disconnect-unconfirmed");
 }
 
-export async function syncFreee(_data: FormData) {
+export async function syncFreee(year: number, _data: FormData) {
+  if (!isForecastYear(year)) redirect("/");
   const session = await requireSession();
+  const date = currentForecastDate(year);
+  if (!date.throughMonth) returnHome("before-year", year);
   const settings = freeeSettings();
   const cookieTokens = await getSessionTokens(session);
-  if (!cookieTokens) returnHome("sync-reconnect");
-  const date = currentForecastDate();
-  if (!date.throughMonth) returnHome("before-year");
-  const id = await beginSync(session);
-  if (!id) returnHome("sync-running");
+  if (!cookieTokens) returnHome("sync-reconnect", year);
+  const id = await beginSync(session, year);
+  if (!id) returnHome("sync-running", year);
 
   let outcome: string;
   try {
@@ -90,23 +91,23 @@ export async function syncFreee(_data: FormData) {
       return refreshFreeeTokens({ ...settings, refreshToken: current.refreshToken });
     });
     if (!tokens) {
-      await finishSync(session, id);
+      await finishSync(session, id, undefined, year);
       outcome = "sync-reconnect";
     } else {
       if (tokens !== cookieTokens) await saveSessionTokens(session, tokens);
       const deadline = AbortSignal.timeout(90_000);
       const snapshot = await syncFreeeAccounting({
-        accessToken: tokens.accessToken, companyId: session.companyId, year: FORECAST_YEAR,
+        accessToken: tokens.accessToken, companyId: session.companyId, year,
         throughMonth: date.throughMonth, throughDate: date.throughDate,
         fetcher: (request, init) => fetch(request, {
           ...init, signal: init?.signal ? AbortSignal.any([deadline, init.signal]) : deadline,
         }),
       });
-      outcome = await finishSync(session, id, { ...snapshot, closedThroughMonth: date.latestClosedMonth })
+      outcome = await finishSync(session, id, { ...snapshot, closedThroughMonth: date.latestClosedMonth }, year)
         ? "synced" : "connection-changed";
     }
   } catch (error) {
-    await finishSync(session, id);
+    await finishSync(session, id, undefined, year);
     outcome = error instanceof FreeeSettingsRequiredError ? "not-configured" : "sync-error";
     if (error instanceof FreeeApiError) {
       if (["invalid_grant", "expired_access_token", "re_authorization_required"].includes(error.code ?? "")) {
@@ -115,5 +116,5 @@ export async function syncFreee(_data: FormData) {
       else if (error.status === 429) outcome = "sync-limit";
     }
   }
-  returnHome(outcome);
+  returnHome(outcome, year);
 }
