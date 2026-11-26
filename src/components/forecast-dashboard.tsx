@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { MonthlyChart } from "@/components/monthly-chart";
+import { APP_NAME } from "@/lib/app-name";
 import { getAccountItemColors, summarizeAccountItems, type AccountItemColors, type MonthlyChartAccountItems } from "@/lib/chart-account-items";
 import { DEFAULT_TAX_FORM_AMOUNTS, type ForecastResult, type MonthAmounts, type MonthlyPlanMode, type TaxInputs } from "@/lib/forecast";
 
@@ -18,7 +19,6 @@ type DashboardProps = {
     configured: boolean;
     connected: boolean;
     canSync: boolean;
-    localSetup?: boolean;
     companyName: string | null;
     syncedAt: string | null;
     accountItemsNeedSync: boolean;
@@ -34,7 +34,6 @@ type DashboardProps = {
     setPlanMode: FormAction;
     logout: FormAction;
   };
-  canLogout: boolean;
 };
 
 const months = Array.from({ length: 12 }, (_, index) => index + 1);
@@ -176,12 +175,12 @@ function MetricCard({
 }
 
 function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<DashboardProps, "connection" | "lastClosedMonth" | "actions">) {
-  const { connected, configured, localSetup, syncedAt, canSync } = connection;
+  const { connected, configured, syncedAt, canSync } = connection;
   const connectionLabel = connected ? "接続済み" : "未接続";
   const syncTime = syncedAt ? timeFormat.format(new Date(syncedAt)) : "未同期";
-  const hasRetainedActuals = Boolean(syncedAt) && !connected;
-  const needsSetup = connected && !canSync;
-  const hasMessages = hasRetainedActuals || needsSetup || connection.accountItemsNeedSync || Boolean(connection.status);
+  const needsLogin = connected && configured && !canSync;
+  const needsSetup = connected && !configured && !canSync;
+  const hasMessages = needsLogin || needsSetup || connection.accountItemsNeedSync || Boolean(connection.status);
 
   return (
     <section className="dashboard-panel connection-panel" id="freee" aria-labelledby="connection-heading">
@@ -194,31 +193,32 @@ function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<Dashboar
         <div><dt>最終同期</dt><dd>{syncTime}</dd></div>
         <div><dt>締め済み実績</dt><dd>{lastClosedMonth === 0 ? "未指定" : `${lastClosedMonth}月まで`}</dd></div>
       </dl>
-      {(connected || configured || localSetup) && (
+      {(connected || configured) && (
         <div className="connection-actions">
           {canSync && (
             <form action={actions.sync}>
               <button className="dashboard-button" type="submit">freeeから同期</button>
             </form>
           )}
-          {connected ? (
-            <form action={actions.disconnectFreee}>
-              <button className={`dashboard-button${canSync ? " secondary" : ""}`} type="submit">接続を解除</button>
-            </form>
-          ) : (
+          {configured && !canSync && (
             <form action={actions.startFreee}>
-              <button className="dashboard-button" type="submit">freeeに接続</button>
+              <button className="dashboard-button" type="submit">{connected ? "freeeで再ログイン" : "freeeでログイン"}</button>
+            </form>
+          )}
+          {connected && (
+            <form action={actions.disconnectFreee}>
+              <button className={`dashboard-button${canSync || needsLogin ? " secondary" : ""}`} type="submit">接続を解除</button>
             </form>
           )}
         </div>
       )}
       {hasMessages && (
         <div className="connection-messages">
-          {hasRetainedActuals && <p className="connection-message">取り込み済みの実績で見込みを計算できます。</p>}
+          {needsLogin && <p className="connection-message">同期するにはfreeeで再ログインし、実績を取り込んでください。</p>}
           {needsSetup && (
             <p className="connection-message">
               {syncedAt ? "取り込み済みの実績で見込みを計算できます。再同期には" : "実績を同期するには"}
-              {localSetup ? <a href="/freee/setup">接続設定</a> : "接続設定"}が必要です。
+              freeeログインのサーバー設定が必要です。
             </p>
           )}
           {connection.accountItemsNeedSync && <p className="connection-message">勘定科目別の内訳を表示するには、freeeから実績を再同期してください。</p>}
@@ -253,7 +253,7 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
     <section className="dashboard-panel" aria-labelledby="tax-heading">
       <header className="panel-heading">
         <h2 id="tax-heading">年の前提と税金</h2>
-        <p>入力した金額と締め済みの実績で年末の見込みを計算します。該当しない金額には0円を入力してください。</p>
+        <p>該当しない金額には0円を入力してください。</p>
       </header>
       <form action={action} className="editable-form">
         <fieldset className="form-group">
@@ -310,7 +310,6 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
         <details className="tax-form-details" suppressHydrationWarning>
           <summary>詳細設定</summary>
           <div className="tax-form-details-content">
-            <p className="form-hint">所得税・住民税のその他の所得控除、所得税の税額控除、寄附予定額は0円が初期値です。</p>
             <fieldset className="form-group">
               <legend>集計期間</legend>
               <div className="field-grid">
@@ -342,12 +341,10 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
                 <AmountField name="residentPersonalDeductionDifference" label="基礎控除以外の人的控除差" value={tax.residentPersonalDeductionDifference} />
                 <AmountField name="residentAdjustmentDeduction" label="住民税の調整控除（任意）" value={tax.residentAdjustmentDeduction} />
               </div>
-              <p className="form-hint">控除の入力には給与明細や住民税の通知書を参照できます。</p>
             </fieldset>
           </div>
         </details>
         <div className="form-footer">
-          <p className="form-hint">入力はサーバー起動中だけ保持します。</p>
           <button className="dashboard-button" type="submit">年末の見込みを計算</button>
         </div>
       </form>
@@ -426,33 +423,8 @@ function MonthlyPlans({ plans, monthlyPlanMode, forecast, actions }: Pick<Dashbo
   );
 }
 
-function ForecastGuidance({ missing, synced }: { missing: ForecastResult["missing"]; synced: boolean }) {
-  const { incomeTaxSettlement, ...annualMissing } = missing;
-  const reasons = [...new Set(Object.values(annualMissing).flat())];
-  const needsMonthlyAmounts = reasons.some((reason) => reason.endsWith("月）"));
-  const needsTaxInputs = reasons.some((reason) => !reason.endsWith("月）"));
-  const settlementReasons = incomeTaxSettlement.filter((reason) => !missing.incomeTax.includes(reason));
-  if (synced && reasons.length === 0 && settlementReasons.length === 0) return null;
-
-  return (
-    <div className="forecast-guidance">
-      {!synced && <p>事業の実績は<a href="#freee">freee連携</a>から取り込めます。</p>}
-      {reasons.length > 0 && (
-        <>
-          <p><strong>未算出の理由</strong>　{reasons.join("、")}</p>
-          {needsMonthlyAmounts && <p>対象月の実績は<a href="#freee">freee連携</a>で確認できます。未締め月は<a href="#monthly-plans">月ごとの見込み</a>で手入力できます。</p>}
-          {needsTaxInputs && <p><a href="#settings">予測の前提</a>を入力し、「年末の見込みを計算」を押すと反映されます。</p>}
-        </>
-      )}
-      {settlementReasons.length > 0 && (
-        <p><strong>追加納付・還付（任意）</strong>　{settlementReasons.join("、")}は<a href="#settings">年の前提と税金</a>の詳細設定で入力できます。</p>
-      )}
-    </div>
-  );
-}
-
 export function ForecastDashboard({
-  year, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions, canLogout,
+  year, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions,
 }: DashboardProps) {
   const itemColors = getAccountItemColors(accountItems);
   const forecastBreakdown = summarizeAccountItems(forecast.months, accountItems);
@@ -461,23 +433,20 @@ export function ForecastDashboard({
     <div className="dashboard-shell">
       <header className="dashboard-topbar">
         <div className="topbar-content">
-          <a href="#overview" className="dashboard-brand"><span className="brand-mark" aria-hidden="true">K</span>kageco support</a>
+          <a href="#overview" className="dashboard-brand"><span className="brand-mark" aria-hidden="true">年</span>{APP_NAME}</a>
           <nav className="dashboard-nav" aria-label="ダッシュボード">
             <a href="#summary">年末の見込み</a>
             <a href="#monthly">月ごとの収支</a>
             <a href="#settings">予測の前提</a>
             <a href="#freee">freee連携</a>
           </nav>
-          {canLogout && <form className="topbar-session" action={actions.logout}><button type="submit" className="dashboard-button secondary">ログアウト</button></form>}
+          <form className="topbar-session" action={actions.logout}><button type="submit" className="dashboard-button secondary">ログアウト</button></form>
         </div>
       </header>
       <main id="overview" className="dashboard-main">
         <header className="dashboard-header">
           <p className="dashboard-period">{year}年1月〜12月</p>
           <h1 className="dashboard-title">年間の収支と税金</h1>
-          <p className="dashboard-intro">{connection.syncedAt
-            ? "取り込み済みの実績を使います。給与・控除などを入力したら「年末の見込みを計算」を押してください。"
-            : "freeeから実績を同期し、給与・控除などを入力して「年末の見込みを計算」を押してください。"}</p>
         </header>
         {notice && <p className="dashboard-notice" role="status">{notice}</p>}
         <ActualSummary forecast={forecast} accountItems={accountItems} itemColors={itemColors} needsSync={needsSync} />
@@ -509,7 +478,6 @@ export function ForecastDashboard({
             ]} />
             <MetricCard title="消費税" amount={forecast.consumptionTax === null ? null : Math.abs(forecast.consumptionTax)} caption={forecast.consumptionTax != null && forecast.consumptionTax < 0 ? "消費税・地方消費税の還付" : "消費税・地方消費税の納付額"} />
           </div>
-          <ForecastGuidance missing={forecast.missing} synced={connection.syncedAt !== null} />
         </section>
         <div className="dashboard-overview">
           <MonthlyChart rows={forecast.months} accountItems={accountItems} itemColors={itemColors} />

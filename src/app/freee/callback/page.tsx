@@ -1,28 +1,23 @@
 import { redirect } from "next/navigation";
-import { completeFreee } from "@/app/freee-actions";
-import { requireSession } from "@/lib/security";
+import { FREEE_ISSUER } from "@/lib/freee";
+import { matchesFreeeLogin } from "@/lib/security";
+import { CompleteLoginForm } from "./complete-login-form";
 
 type Search = Promise<Record<string, string | string[] | undefined>>;
 export const dynamic = "force-dynamic";
 
 export default async function FreeeCallback({ searchParams }: { searchParams: Search }) {
-  await requireSession();
   const { state, code, iss, error } = await searchParams;
-  if (error) redirect("/?notice=oauth-cancelled#freee");
-  if (typeof state !== "string" || typeof code !== "string") redirect("/?notice=invalid-oauth#freee");
+  if (error) redirect("/?notice=oauth-cancelled");
+  if (typeof state !== "string" || typeof code !== "string" || !code || code.length > 4096
+    || (iss !== undefined && iss !== FREEE_ISSUER)
+    || !(await matchesFreeeLogin(state))) redirect("/?notice=invalid-oauth");
 
   return (
     <main className="dashboard-login">
       <section className="dashboard-panel">
-        <h1>freee会計に接続</h1>
-        <p>認可した事業所をこのアプリに接続します。</p>
-        <form action={completeFreee}>
-          <input type="hidden" name="state" value={state} />
-          <input type="hidden" name="code" value={code} />
-          <input type="hidden" name="iss" value={typeof iss === "string" ? iss : ""} />
-          <button className="dashboard-button" type="submit">接続を完了</button>
-        </form>
-        <a href="/#freee">ダッシュボードに戻る</a>
+        <h1 role="status">freeeでログインしています</h1>
+        <CompleteLoginForm code={code} state={state} issuer={iss ?? ""} />
       </section>
     </main>
   );

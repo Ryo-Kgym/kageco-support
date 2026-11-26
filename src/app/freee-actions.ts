@@ -1,42 +1,44 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
-import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { redirect, RedirectType } from "next/navigation";
 import { FORECAST_YEAR } from "@/lib/forecast";
 import { FREEE_ISSUER, FreeeApiError, exchangeFreeeCode, freeeAuthorizationUrl, getFreeeCompany, refreshFreeeTokens, revokeFreeeTokens, syncFreeeAccounting } from "@/lib/freee";
-import { activeTokens, beginSync, connectionDetails, consumeOAuthAttempt, currentForecastDate, disconnectConnection, finishSync, saveConnection, saveOAuthAttempt } from "@/lib/forecast-store";
-import { freeeSettings, localFreeeCallbackUrl } from "@/lib/freee-settings";
-import { requireSession } from "@/lib/security";
+import { activeTokens, beginSync, closeForecastSession, currentForecastDate, finishSync } from "@/lib/forecast-store";
+import { freeeSettings } from "@/lib/freee-settings";
+import { authConfigured, beginFreeeLogin, clearFreeeSession, consumeFreeeLogin, createFreeeSession, currentSession, getSessionTokens, requireSession, saveSessionTokens } from "@/lib/security";
 
 function returnHome(notice: string): never {
   redirect(`/?notice=${notice}#freee`);
 }
 
+function returnFromLogin(notice: string): never {
+  redirect(`/?notice=${notice}`, RedirectType.replace);
+}
+
 class FreeeSettingsRequiredError extends Error {}
 
 export async function startFreee(_data: FormData) {
-  const session = await requireSession();
   const settings = freeeSettings();
-  if (!settings) {
-    if (localFreeeCallbackUrl()) redirect("/freee/setup");
-    returnHome("not-configured");
-  }
-  const state = randomBytes(32).toString("base64url");
-  await saveOAuthAttempt(state, session);
+  if (!settings || !authConfigured()) returnHome("not-configured");
+  const callback = new URL(settings.redirectUri);
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  if (host && host !== callback.host) redirect(callback.origin);
+
+  const state = await beginFreeeLogin();
   redirect(freeeAuthorizationUrl({ ...settings, state }));
 }
 
 export async function completeFreee(form: FormData) {
-  const session = await requireSession();
   const settings = freeeSettings();
-  if (!settings) returnHome("not-configured");
+  if (!settings || !authConfigured()) returnFromLogin("not-configured");
   const code = form.get("code");
   const state = form.get("state");
   const issuer = form.get("iss");
   if (typeof code !== "string" || !code || code.length > 4096 || typeof state !== "string"
-    || !/^[A-Za-z0-9_-]{43}$/.test(state) || (issuer && issuer !== FREEE_ISSUER)) returnHome("invalid-oauth");
-  const oauthGeneration = await consumeOAuthAttempt(state, session);
-  if (oauthGeneration === null) returnHome("invalid-oauth");
+    || !/^[A-Za-z0-9_-]{43}$/.test(state) || (issuer && issuer !== FREEE_ISSUER)) returnFromLogin("invalid-oauth");
+  if (!(await consumeFreeeLogin(state))) returnFromLogin("invalid-oauth");
 
   let outcome: string;
   try {
@@ -48,51 +50,63 @@ export async function completeFreee(form: FormData) {
       if (company.organizationType !== "individual") {
         outcome = "individual-required";
       } else {
-        outcome = await saveConnection(company.id, company.name, tokens, oauthGeneration);
+        const previous = await currentSession();
+        await createFreeeSession(company.id, company.name, tokens);
+        if (previous) await closeForecastSession(previous);
+        outcome = "connected";
       }
     }
   } catch {
     outcome = "connection-error";
   }
-  returnHome(outcome);
+  returnFromLogin(outcome);
 }
 
 export async function disconnectFreee(_data: FormData) {
-  await requireSession();
-  const tokens = await disconnectConnection();
-  if (!tokens) returnHome((await connectionDetails()) ? "disconnect-retry" : "disconnected");
+  const session = await requireSession();
+  const cookieTokens = await getSessionTokens(session);
+  const cachedTokens = await closeForecastSession(session);
+  await clearFreeeSession();
+  const tokens = cachedTokens && (!cookieTokens || cachedTokens.expiresAt >= cookieTokens.expiresAt) ? cachedTokens : cookieTokens;
+  if (!tokens) returnHome("disconnected");
   const revoked = await revokeFreeeTokens(tokens);
   returnHome(revoked ? "disconnected" : "disconnect-unconfirmed");
 }
 
 export async function syncFreee(_data: FormData) {
-  await requireSession();
+  const session = await requireSession();
   const settings = freeeSettings();
-  const connection = await connectionDetails();
-  if (!connection) returnHome(settings ? "company-required" : "not-configured");
+  const cookieTokens = await getSessionTokens(session);
+  if (!cookieTokens) returnHome("sync-reconnect");
   const date = currentForecastDate();
   if (!date.throughMonth) returnHome("before-year");
-  const id = await beginSync(connection.version);
+  const id = await beginSync(session);
   if (!id) returnHome("sync-running");
 
   let outcome: string;
   try {
-    const tokens = await activeTokens(connection.version, (current) => {
+    const tokens = await activeTokens(session, cookieTokens, (current) => {
       if (!settings) throw new FreeeSettingsRequiredError();
       return refreshFreeeTokens({ ...settings, refreshToken: current.refreshToken });
     });
-    const deadline = AbortSignal.timeout(90_000);
-    const snapshot = await syncFreeeAccounting({
-      accessToken: tokens.accessToken, companyId: Number(connection.company_id), year: FORECAST_YEAR,
-      throughMonth: date.throughMonth, throughDate: date.throughDate,
-      fetcher: (request, init) => fetch(request, {
-        ...init, signal: init?.signal ? AbortSignal.any([deadline, init.signal]) : deadline,
-      }),
-    });
-    outcome = await finishSync(id, connection.version, { ...snapshot, closedThroughMonth: date.latestClosedMonth })
-      ? "synced" : "connection-changed";
+    if (!tokens) {
+      await finishSync(session, id);
+      outcome = "sync-reconnect";
+    } else {
+      if (tokens !== cookieTokens) await saveSessionTokens(session, tokens);
+      const deadline = AbortSignal.timeout(90_000);
+      const snapshot = await syncFreeeAccounting({
+        accessToken: tokens.accessToken, companyId: session.companyId, year: FORECAST_YEAR,
+        throughMonth: date.throughMonth, throughDate: date.throughDate,
+        fetcher: (request, init) => fetch(request, {
+          ...init, signal: init?.signal ? AbortSignal.any([deadline, init.signal]) : deadline,
+        }),
+      });
+      outcome = await finishSync(session, id, { ...snapshot, closedThroughMonth: date.latestClosedMonth })
+        ? "synced" : "connection-changed";
+    }
   } catch (error) {
-    await finishSync(id, connection.version);
+    await finishSync(session, id);
     outcome = error instanceof FreeeSettingsRequiredError ? "not-configured" : "sync-error";
     if (error instanceof FreeeApiError) {
       if (["invalid_grant", "expired_access_token", "re_authorization_required"].includes(error.code ?? "")) {

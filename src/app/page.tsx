@@ -1,32 +1,31 @@
-import { login, logout, savePlan, saveTax, setPlanMode } from "@/app/forecast-actions";
+import { logout, savePlan, saveTax, setPlanMode } from "@/app/forecast-actions";
 import { disconnectFreee, startFreee, syncFreee } from "@/app/freee-actions";
 import { ForecastDashboard } from "@/components/forecast-dashboard";
+import { APP_NAME } from "@/lib/app-name";
 import { getChartAccountItems } from "@/lib/chart-account-items";
 import { calculateForecast, FORECAST_YEAR } from "@/lib/forecast";
-import { loadForecast } from "@/lib/forecast-store";
-import { freeeSettings, localFreeeCallbackUrl } from "@/lib/freee-settings";
-import { authConfigured, localOpenAccess, sessionId } from "@/lib/security";
+import { canUseAccessToken, loadForecast } from "@/lib/forecast-store";
+import { freeeConfiguration } from "@/lib/freee-settings";
+import { authConfigured, currentSession, getSessionTokens } from "@/lib/security";
 
 export const maxDuration = 120;
 
 const notices: Record<string, string> = {
-  "login-failed": "パスワードを確認してください。",
   "not-configured": "freeeの接続設定が必要です。",
-  "invalid-oauth": "認可の有効期限が切れたか、接続を確認できませんでした。freee連携をやり直してください。",
-  "oauth-cancelled": "freeeへの接続をキャンセルしました。",
+  "invalid-oauth": "認可の有効期限が切れたか、接続を確認できませんでした。freeeでログインし直してください。",
+  "oauth-cancelled": "freeeでのログインをキャンセルしました。",
   "company-required": "freeeで対象の事業所を選択して接続してください。",
   "individual-required": "個人事業主として登録された事業所を選択してください。",
-  "different-company": "このアプリで利用していた事業所を選択してください。このアプリは1つの事業所を対象としています。",
-  connected: "freeeに接続しました。「freeeから同期」で実績を取り込めます。",
-  disconnected: "freeeとの接続を解除しました。取り込み済みの実績は引き続き表示します。",
-  "disconnect-unconfirmed": "アプリでの接続を解除しました。freee側で認可が無効になったかは確認できませんでした。",
-  "disconnect-retry": "接続状態が変わりました。もう一度「接続を解除」を押してください。",
+  connected: "freeeでログインしました。",
+  disconnected: "freeeとの接続を解除し、ログアウトしました。",
+  "disconnect-unconfirmed": "ログアウトしました。freee側で認可が無効になったかは確認できませんでした。",
+  "logged-out": "ログアウトしました。",
   "connection-error": "freeeに接続できませんでした。認可情報とコールバックURLを確認してください。",
   "connection-changed": "同期中に接続先が変更されました。もう一度同期してください。",
   "before-year": "対象年の実績を取り込めるのは、対象年の開始後です。",
   synced: "freeeの実績を更新しました。",
   "sync-running": "同期中です。完了後に画面を更新してください。",
-  "sync-reconnect": "freeeの認可を更新できませんでした。「接続を解除」を押した後、「freeeに接続」から同じ事業所に接続してください。",
+  "sync-reconnect": "freeeの認可を更新できませんでした。freeeで再ログインしてから実績を同期してください。",
   "sync-permission": "freeeの参照権限と契約プランを確認してください。",
   "sync-limit": "freeeのリクエスト上限に達しました。時間をおいて再実行してください。",
   "sync-error": "同期できませんでした。前回の同期結果がある場合は引き続き表示します。",
@@ -45,28 +44,44 @@ type Search = Promise<Record<string, string | string[] | undefined>>;
 export default async function Home({ searchParams }: { searchParams: Search }) {
   const { notice } = await searchParams;
   const message = typeof notice === "string" && Object.hasOwn(notices, notice) ? notices[notice] : undefined;
-  if (!(await sessionId())) {
+  const session = await currentSession();
+  const { settings, issues } = freeeConfiguration();
+  const sessionConfigured = authConfigured();
+  const configured = Boolean(settings) && sessionConfigured;
+  if (!session) {
+    const localIssues = process.env.NODE_ENV === "development"
+      ? [...issues, ...(sessionConfigured ? [] : ["SESSION_SECRET"])]
+      : [];
     return (
       <main className="dashboard-login">
-        <section className="dashboard-panel">
-          <h1>Kageco 年間収支予測</h1>
-          {authConfigured() ? (
-            <form action={login}>
-              {message && <p role="alert">{message}</p>}
-              <label className="form-field">
-                <span>パスワード</span>
-                <input name="password" type="password" autoComplete="current-password" required />
-              </label>
-              <button className="dashboard-button" type="submit">ログイン</button>
-            </form>
-          ) : <p>アプリのログイン設定を準備中です。</p>}
+        <section className="dashboard-panel login-panel" aria-labelledby="login-heading">
+          <header className="panel-heading">
+            <h1 id="login-heading">{APP_NAME}</h1>
+            <p>freeeアカウントでログインし、試算に使う事業所を選びます。</p>
+          </header>
+          {message && <p className="dashboard-notice" role="status">{message}</p>}
+          <form action={startFreee}>
+            <button className="dashboard-button" type="submit" disabled={!configured} aria-describedby={configured ? undefined : "login-unavailable"}>
+              freeeでログイン
+            </button>
+          </form>
+          {!configured && (
+            <div className="login-configuration" id="login-unavailable">
+              <strong>freeeログインを開始できません</strong>
+              {localIssues.length > 0 ? (
+                <>
+                  <p><code>.env.local</code> で次の設定を確認してください。</p>
+                  <ul>{localIssues.map((key) => <li key={key}><code>{key}</code></li>)}</ul>
+                </>
+              ) : <p>この環境のログイン設定が完了していません。</p>}
+            </div>
+          )}
         </section>
       </main>
     );
   }
 
-  const data = await loadForecast();
-  const configured = Boolean(freeeSettings());
+  const [data, tokens] = await Promise.all([loadForecast(session), getSessionTokens(session)]);
   const forecast = calculateForecast({
     ...data,
     year: FORECAST_YEAR,
@@ -88,15 +103,14 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
       connection={{
         configured,
         connected: data.connected,
-        canSync: data.connected && (configured || data.canSyncWithoutRefresh),
-        localSetup: Boolean(localFreeeCallbackUrl()),
+        canSync: data.connected && tokens !== null && notice !== "sync-reconnect" &&
+          (configured || data.canSyncWithoutRefresh || canUseAccessToken(tokens)),
         companyName: data.companyName,
         syncedAt: data.syncedAt,
         accountItemsNeedSync: data.actuals.some((row) => row.sales !== null && row.expenses !== null && !row.accountItems),
         status: data.tax.consumptionMethod && !data.consumptionMethodConfirmed ? "取り込んだ消費税の申告方式を確認し、「年末の見込みを計算」を押してください。" : null,
       }}
       notice={message}
-      canLogout={!localOpenAccess()}
       actions={{
         startFreee,
         disconnectFreee,

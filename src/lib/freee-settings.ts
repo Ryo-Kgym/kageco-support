@@ -3,12 +3,6 @@ import "server-only";
 type FreeeCredentials = { clientId: string; clientSecret: string };
 type FreeeSettings = FreeeCredentials & { redirectUri: string };
 
-function environmentCredentials(): FreeeCredentials | null {
-  const clientId = process.env.FREEE_CLIENT_ID;
-  const clientSecret = process.env.FREEE_CLIENT_SECRET;
-  return clientId && clientSecret ? { clientId, clientSecret } : null;
-}
-
 function loopback(url: URL) {
   return ["127.0.0.1", "localhost"].includes(url.hostname);
 }
@@ -25,15 +19,20 @@ function configuredOrigin() {
   }
 }
 
-export function localFreeeCallbackUrl() {
+export function freeeConfiguration() {
   const origin = configuredOrigin();
-  if (process.env.NODE_ENV !== "development" || !origin || !loopback(origin) || environmentCredentials()) return null;
-  return `${origin.origin}/freee/callback`;
+  const clientId = process.env.FREEE_CLIENT_ID?.trim();
+  const clientSecret = process.env.FREEE_CLIENT_SECRET?.trim();
+  const issues: string[] = [];
+  if (!origin) issues.push("APP_ORIGIN");
+  if (!clientId) issues.push("FREEE_CLIENT_ID");
+  if (!clientSecret) issues.push("FREEE_CLIENT_SECRET");
+  const settings: FreeeSettings | null = origin && clientId && clientSecret
+    ? { clientId, clientSecret, redirectUri: `${origin.origin}/freee/callback` }
+    : null;
+  return { settings, issues };
 }
 
 export function freeeSettings(): FreeeSettings | null {
-  const origin = configuredOrigin();
-  if (!origin) return null;
-  const credentials = environmentCredentials();
-  return credentials ? { ...credentials, redirectUri: `${origin.origin}/freee/callback` } : null;
+  return freeeConfiguration().settings;
 }
