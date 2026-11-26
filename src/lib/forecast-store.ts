@@ -22,6 +22,8 @@ interface Preferences {
   plans: Record<string, MonthAmounts | null>;
   monthlyPlanMode?: MonthlyPlanMode;
   lastClosedMonth: number | null;
+  lastClosedSalesMonth?: number | null;
+  lastClosedExpenseMonth?: number | null;
 }
 
 type Snapshot = FreeeAccountingSnapshot & { closedThroughMonth: number };
@@ -68,9 +70,25 @@ function getForecastSession(session: FreeeSession, create = true): ForecastSessi
   return entry;
 }
 
-export async function savePreferences(session: FreeeSession, tax: TaxInputs, lastClosedMonth: number | null) {
+export async function savePreferences(
+  session: FreeeSession,
+  tax: TaxInputs,
+  lastClosedMonth?: number | null,
+  cutoffOverrides: Pick<Preferences, "lastClosedSalesMonth" | "lastClosedExpenseMonth"> = {},
+) {
   const entry = getForecastSession(session);
-  if (entry) Object.assign(entry.preferences, { tax, lastClosedMonth });
+  if (!entry) return;
+  Object.assign(entry.preferences, { tax }, cutoffOverrides);
+  if (lastClosedMonth !== undefined) entry.preferences.lastClosedMonth = lastClosedMonth;
+}
+
+export async function saveSharedClosedMonth(session: FreeeSession, lastClosedMonth: number | null) {
+  const entry = getForecastSession(session);
+  if (entry) Object.assign(entry.preferences, {
+    lastClosedMonth,
+    lastClosedSalesMonth: null,
+    lastClosedExpenseMonth: null,
+  });
 }
 
 export async function saveMonthlyPlan(session: FreeeSession, month: number, plan: MonthAmounts | null) {
@@ -93,17 +111,31 @@ export async function loadForecast(session: FreeeSession) {
   const entry = getForecastSession(session);
   const stored = entry?.preferences;
   const accounting = entry?.accounting;
-  const maxClosedMonth = Math.min(accounting?.snapshot.closedThroughMonth ?? 0, currentForecastDate().latestClosedMonth);
-  const lastClosedMonth = Math.min(stored?.lastClosedMonth ?? maxClosedMonth, maxClosedMonth);
+  const { latestClosedMonth: defaultClosedMonth } = currentForecastDate();
+  const maxClosedMonth = Math.min(accounting?.snapshot.closedThroughMonth ?? 0, defaultClosedMonth);
+  const fallbackClosedMonth = Math.min(stored?.lastClosedMonth ?? defaultClosedMonth, defaultClosedMonth);
+  const lastClosedSalesMonth = stored?.lastClosedSalesMonth == null
+    ? fallbackClosedMonth : Math.min(stored.lastClosedSalesMonth, maxClosedMonth);
+  const lastClosedExpenseMonth = stored?.lastClosedExpenseMonth == null
+    ? fallbackClosedMonth : Math.min(stored.lastClosedExpenseMonth, maxClosedMonth);
+  const lastClosedMonth = Math.min(lastClosedSalesMonth, lastClosedExpenseMonth);
   const plans = Object.values(stored?.plans ?? {}).filter((plan) => plan !== null);
   const hasSavedFuturePlan = plans.some((plan) => plan.month > lastClosedMonth);
   const monthlyPlanMode: MonthlyPlanMode = stored?.monthlyPlanMode ?? (hasSavedFuturePlan ? "manual" : "trend");
 
   const settings = accounting?.snapshot.taxSettings;
+  const actuals = (accounting?.snapshot.months ?? []).map((row) => {
+    if (row.month <= maxClosedMonth) return row;
+    return {
+      ...row,
+      ...(row.month <= lastClosedSalesMonth && { sales: null, salesTax: null, taxableSalesByRate: null }),
+      ...(row.month <= lastClosedExpenseMonth && { expenses: null, deductiblePurchaseTax: null }),
+    };
+  });
   const tax: TaxInputs = stored?.tax ?? {};
   const simplifiedRates = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
   return {
-    actuals: accounting?.snapshot.months ?? [],
+    actuals,
     plans,
     monthlyPlanMode,
     tax: {
@@ -113,7 +145,12 @@ export async function loadForecast(session: FreeeSession) {
         ? simplifiedRates[settings.simpleBusinessCategory - 1] : undefined),
     },
     lastClosedMonth,
+    lastClosedSalesMonth,
+    lastClosedExpenseMonth,
     lastClosedMonthSetting: stored?.lastClosedMonth ?? null,
+    lastClosedSalesMonthSetting: stored?.lastClosedSalesMonth ?? null,
+    lastClosedExpenseMonthSetting: stored?.lastClosedExpenseMonth ?? null,
+    defaultClosedMonth,
     maxClosedMonth,
     connected: entry !== undefined,
     canSyncWithoutRefresh: canUseAccessToken(entry?.tokens),

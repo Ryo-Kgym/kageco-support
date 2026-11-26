@@ -1,4 +1,4 @@
-import { logout, savePlan, saveTax, setPlanMode } from "@/app/forecast-actions";
+import { logout, saveClosedMonth, savePlan, saveTax, setPlanMode } from "@/app/forecast-actions";
 import { disconnectFreee, startFreee, syncFreee } from "@/app/freee-actions";
 import { ForecastDashboard } from "@/components/forecast-dashboard";
 import { APP_NAME } from "@/lib/app-name";
@@ -31,7 +31,9 @@ const notices: Record<string, string> = {
   "sync-error": "同期できませんでした。前回の同期結果がある場合は引き続き表示します。",
   "invalid-input": "金額は円単位の整数で入力してください。",
   "invalid-closed-month": "締め済みの月は、月末まで取り込み済みの範囲から選択してください。",
-  "invalid-plan-month": "締め済みより後の月を選択してください。",
+  "invalid-summary-closed-month": "締め済み最終月は、前月までの範囲から選択してください。",
+  "invalid-plan-month": "売上または支出が未締めの月を選択してください。",
+  "closed-month-saved": "締め済み最終月を売上と経費に反映しました。",
   "tax-saved": "入力内容を年末の見込みに反映しました。",
   "plan-saved": "月ごとの見込みを保存しました。",
   "plan-mode-trend": "推移モードに切り替えました。",
@@ -97,9 +99,13 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
       tax={data.tax}
       plans={data.plans}
       monthlyPlanMode={data.monthlyPlanMode}
-      lastClosedMonth={data.lastClosedMonth}
+      lastClosedSalesMonth={data.lastClosedSalesMonth}
+      lastClosedExpenseMonth={data.lastClosedExpenseMonth}
+      defaultClosedMonth={data.defaultClosedMonth}
       maxClosedMonth={data.maxClosedMonth}
       lastClosedMonthSetting={data.lastClosedMonthSetting}
+      lastClosedSalesMonthSetting={data.lastClosedSalesMonthSetting}
+      lastClosedExpenseMonthSetting={data.lastClosedExpenseMonthSetting}
       connection={{
         configured,
         connected: data.connected,
@@ -115,6 +121,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
         startFreee,
         disconnectFreee,
         sync: syncFreee,
+        saveClosedMonth,
         saveTax,
         savePlan,
         setPlanMode,

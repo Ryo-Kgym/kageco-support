@@ -260,19 +260,19 @@ export function MonthlyChart({ rows, accountItems, itemColors }: {
               </tr>
             </thead>
             <tbody>
-              {chartRows.map(({ month, closed, actual, series }) => (
+              {chartRows.map(({ month, closedByAmount, actual, series }) => (
                 <tr key={month}>
                   <th scope="row">{month}月</th>
                   {series.map((group) => (
                     <td key={`actual-${group.key}`} className="numeric-cell">
                       {amountLabel(actual[group.key])}
-                      {closed && <TableBreakdown group={group} month={month} itemColors={itemColors} />}
+                      {closedByAmount[group.key] && <TableBreakdown group={group} month={month} itemColors={itemColors} />}
                     </td>
                   ))}
                   {series.map((group) => (
                     <td key={`forecast-${group.key}`} className="numeric-cell">
-                      {closed ? "締め済み" : amountLabel(group.amount)}
-                      {!closed && <TableBreakdown group={group} month={month} itemColors={itemColors} />}
+                      {closedByAmount[group.key] ? "締め済み" : amountLabel(group.amount)}
+                      {!closedByAmount[group.key] && <TableBreakdown group={group} month={month} itemColors={itemColors} />}
                     </td>
                   ))}
                 </tr>

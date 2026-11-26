@@ -221,6 +221,29 @@ a {
   gap: 4px;
 }
 
+.forecast-heading {
+  align-items: start;
+}
+
+.forecast-heading .section-title {
+  flex: 1 1 26rem;
+  min-width: 0;
+}
+
+.forecast-cutoff {
+  display: grid;
+  gap: 5px;
+  width: min(100%, 18rem);
+  margin-inline-start: auto;
+}
+
+.forecast-cutoff-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
 .section-heading h2,
 .panel-heading h2 {
   margin: 0;
@@ -234,30 +257,6 @@ a {
   margin: 0;
   color: var(--muted);
   font-size: .875rem;
-}
-
-.summary-profit {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 12px;
-  margin: 0;
-  padding: 7px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.summary-profit dt {
-  color: var(--secondary);
-  font-size: .875rem;
-}
-
-.summary-profit dd {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
 .account-breakdown {
@@ -329,7 +328,9 @@ a {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.financial-grid:has(.account-breakdown-more[open]) {
+.financial-grid:has(.account-breakdown-more[open]),
+.financial-grid:has(.forecast-calculation[open]),
+.metrics-grid:has(.tax-calculation[open]) {
   align-items: start;
 }
 
@@ -353,6 +354,10 @@ a {
   gap: 8px;
   padding: clamp(16px, 1.6vw, 20px);
   container-type: inline-size;
+}
+
+.income-card {
+  grid-column: 1 / -1;
 }
 
 @container (min-width: 450px) {
@@ -421,6 +426,56 @@ a {
   margin: 0;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
+}
+
+.tax-calculation,
+.forecast-calculation {
+  border-top: 1px solid var(--line-subtle);
+  font-size: .875rem;
+  overflow-wrap: anywhere;
+}
+
+.tax-calculation summary,
+.forecast-calculation summary {
+  min-height: 44px;
+  padding-block: 11px;
+  color: var(--forest);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.calculation-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--canvas);
+  font-size: .875rem;
+  overflow-wrap: anywhere;
+}
+
+.calculation-steps dt {
+  color: var(--secondary);
+  font-weight: 700;
+}
+
+.calculation-steps dd {
+  margin: 3px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+@container (min-width: 760px) {
+  .income-card .calculation-steps:has(> div:nth-child(2)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 24px;
+  }
+}
+
+.tax-calculation-missing {
+  margin: 0;
+  padding-inline-start: 1.3em;
+  color: var(--muted);
 }
 
 .dashboard-overview {
@@ -1147,7 +1202,17 @@ a {
 }
 
 @media (max-width: 640px) {
-  .financial-grid {
+  .forecast-heading .section-title {
+    flex-basis: 100%;
+  }
+
+  .forecast-cutoff {
+    width: 100%;
+    margin-inline-start: 0;
+  }
+
+  .financial-grid,
+  .metrics-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1165,10 +1230,6 @@ a {
 
   .dashboard-nav a {
     padding-inline: 8px;
-  }
-
-  .metrics-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 
