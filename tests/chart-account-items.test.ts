@@ -62,8 +62,25 @@ test("reports legacy and mismatched account items separately from manual totals"
   assert.deepEqual(items[1], { sales: null, expenses: null });
   assert.equal(items[2].expenses, null);
   assert.deepEqual(items[4], { sales: null, expenses: null });
-  assert.deepEqual(summarizeAccountItems(months.slice(0, 3), items), [
-    { items: [{ id: 1, name: "制作売上", amount: 12 }], manual: 20, unavailable: 9 },
-    { items: [], manual: 5, unavailable: 6 },
-  ]);
+  assert.deepEqual(summarizeAccountItems(months.slice(0, 3), items), {
+    sales: { items: [{ id: 1, name: "制作売上", amount: 12 }], manual: 20, unavailable: 9, hasMissingMonths: false },
+    expenses: { items: [], manual: 5, unavailable: 6, hasMissingMonths: false },
+  });
+});
+
+test("keeps known account items visible when another month's total is unknown", () => {
+  const actuals = [
+    actualMonth(1, 100, 30, {
+      sales: [{ id: 1, name: "制作売上", amount: 100 }],
+      expenses: [{ id: 2, name: "通信費", amount: 30 }],
+    }),
+    actualMonth(2, null, null),
+  ];
+  const { months } = calculateForecast({ year: FORECAST_YEAR, lastClosedMonth: 2, actuals });
+  const items = getChartAccountItems(months, actuals);
+
+  assert.deepEqual(summarizeAccountItems(months.slice(0, 2), items), {
+    sales: { items: [{ id: 1, name: "制作売上", amount: 100 }], manual: null, unavailable: null, hasMissingMonths: true },
+    expenses: { items: [{ id: 2, name: "通信費", amount: 30 }], manual: null, unavailable: null, hasMissingMonths: true },
+  });
 });

@@ -66,6 +66,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
   }
 
   const data = await loadForecast();
+  const configured = Boolean(freeeSettings());
   const forecast = calculateForecast({
     ...data,
     year: FORECAST_YEAR,
@@ -85,8 +86,9 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
       maxClosedMonth={data.maxClosedMonth}
       lastClosedMonthSetting={data.lastClosedMonthSetting}
       connection={{
-        configured: Boolean(freeeSettings()),
+        configured,
         connected: data.connected,
+        canSync: data.connected && (configured || data.canSyncWithoutRefresh),
         localSetup: Boolean(localFreeeCallbackUrl()),
         companyName: data.companyName,
         syncedAt: data.syncedAt,

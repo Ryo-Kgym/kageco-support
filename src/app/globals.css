@@ -249,12 +249,12 @@ a {
 
 .actual-totals {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 135px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 174px), 1fr));
+  align-items: start;
   gap: 8px 12px;
-  margin: 0;
 }
 
-.actual-totals div {
+.actual-totals > article {
   min-width: 0;
   padding: 11px 14px;
   border: 1px solid var(--line);
@@ -262,13 +262,14 @@ a {
   background: var(--surface);
 }
 
-.actual-totals dt {
+.actual-totals h3 {
+  margin: 0;
   color: var(--secondary);
   font-size: .875rem;
   font-weight: 700;
 }
 
-.actual-totals dd {
+.actual-total {
   margin: 2px 0 0;
   font-size: clamp(1.1rem, 1.7vw, 1.55rem);
   font-variant-numeric: tabular-nums;
@@ -276,47 +277,56 @@ a {
   overflow-wrap: anywhere;
 }
 
-.actual-totals dd.unavailable {
+.actual-total.unavailable {
   color: var(--muted);
   font-size: 1rem;
 }
 
-.account-summary-groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: 12px;
-  margin-top: 10px;
-  font-size: .875rem;
+.account-breakdown {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: .8rem;
 }
 
-.account-summary-groups section {
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-}
-
-.account-summary-groups h3 {
-  margin: 0 0 6px;
+.account-breakdown h4 {
+  margin: 0 0 4px;
+  color: var(--secondary);
   font-size: 1em;
 }
 
-.account-summary-groups p,
-.account-summary-amounts {
+.account-breakdown p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.account-breakdown a {
+  color: var(--forest);
+  text-underline-offset: .14em;
+}
+
+.account-breakdown-amounts {
   margin: 0;
 }
 
-.account-summary-amounts div {
+.account-breakdown-amounts div {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  padding: 5px 0;
+  gap: 6px;
+  padding: 4px 0;
   border-top: 1px solid var(--line-subtle);
   overflow-wrap: anywhere;
 }
 
-.account-summary-amounts dd {
+.account-breakdown-amounts dt {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.account-breakdown-amounts dd {
   margin: 0;
   text-align: right;
   white-space: nowrap;
@@ -326,6 +336,7 @@ a {
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: start;
   gap: 12px;
 }
 

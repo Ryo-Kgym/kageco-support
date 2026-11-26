@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { MonthlyChartAccountItems } from "@/lib/chart-account-items";
+import type { AccountItemColors, MonthlyChartAccountItems } from "@/lib/chart-account-items";
 import type { ForecastMonth } from "@/lib/forecast";
 
 const seriesLabels = { sales: "売上", expenses: "経費" } as const;
@@ -23,16 +23,8 @@ type ActiveMonth = {
   maxHeight: number;
 };
 
-const colors = [
-  "#167767", "#bd6832", "#466ab2", "#9763a2", "#b44059", "#7b782c", "#237f9c", "#98553c",
-  "#518643", "#4257a0", "#a4517c", "#895c1f", "#357d72", "#a54a40", "#696496", "#639048",
-];
 const amountFormat = new Intl.NumberFormat("ja-JP");
 const amountLabel = (amount: number | null) => amount === null ? "未算出" : `${amountFormat.format(amount)}円`;
-
-function chartColor(index: number) {
-  return colors[index] ?? `hsl(${index * 137.508 % 360} 60% ${index % 2 === 0 ? 34 : 49}%)`;
-}
 
 function makeSeries(row: ForecastMonth, accountItems: MonthlyChartAccountItems) {
   return seriesKeys.map((key): ChartSeries => ({
@@ -62,12 +54,12 @@ function swatch(color: string | undefined) {
   return { "--bar-color": color } as CSSProperties;
 }
 
-function ItemList({ items, itemColors }: { items: AccountItem[]; itemColors: Map<number, string> }) {
+function ItemList({ items, itemColors }: { items: AccountItem[]; itemColors: AccountItemColors }) {
   return (
     <dl className="chart-item-list">
       {items.map((item) => (
         <div key={item.id}>
-          <dt><span className="legend-swatch" style={swatch(itemColors.get(item.id))} aria-hidden="true" />{item.name}</dt>
+          <dt><span className="legend-swatch" style={swatch(itemColors.get(item.id)?.color)} aria-hidden="true" />{item.name}</dt>
           <dd>{amountLabel(item.amount)}</dd>
         </div>
       ))}
@@ -84,7 +76,7 @@ function ChartBar({ series, zero, range, itemColors }: {
   series: ChartSeries;
   zero: number;
   range: number;
-  itemColors: Map<number, string>;
+  itemColors: AccountItemColors;
 }) {
   const amounts = stackSegments(series);
   let positive = 0;
@@ -95,7 +87,7 @@ function ChartBar({ series, zero, range, itemColors }: {
         const offset = amount < 0 ? (negative += amount) : positive;
         if (amount > 0) positive += amount;
         const style = {
-          ...swatch(id === null ? undefined : itemColors.get(id)),
+          ...swatch(id === null ? undefined : itemColors.get(id)?.color),
           "--bar-height": `${Math.abs(amount) / range * 100}%`,
           "--bar-bottom": `${(zero + offset / range) * 100}%`,
         } as CSSProperties;
@@ -105,9 +97,10 @@ function ChartBar({ series, zero, range, itemColors }: {
   );
 }
 
-export function MonthlyChart({ rows, accountItems }: {
+export function MonthlyChart({ rows, accountItems, itemColors }: {
   rows: ForecastMonth[];
   accountItems: MonthlyChartAccountItems;
+  itemColors: AccountItemColors;
 }) {
   const [active, setActive] = useState<ActiveMonth | null>(null);
   const chartFrame = useRef<HTMLDivElement>(null);
@@ -131,20 +124,16 @@ export function MonthlyChart({ rows, accountItems }: {
 
   const chartRows = rows.map((row) => ({ ...row, series: makeSeries(row, accountItems) }));
   const available = chartRows.some(({ series }) => series.some(({ amount }) => amount !== null));
-  const accounts = new Map<number, string>();
   let ceiling = 0;
   let floor = 0;
   for (const { series } of chartRows) {
     for (const group of series) {
-      for (const { id, name } of group.items ?? []) accounts.set(id, name);
       const amounts = stackSegments(group);
       ceiling = Math.max(ceiling, amounts.reduce((sum, { amount }) => sum + Math.max(0, amount), 0));
       floor = Math.min(floor, amounts.reduce((sum, { amount }) => sum + Math.min(0, amount), 0));
     }
   }
 
-  const coloredAccounts = [...accounts].sort(([a], [b]) => a - b);
-  const itemColors = new Map(coloredAccounts.map(([id], index) => [id, chartColor(index)]));
   const range = ceiling - floor || 1;
   const zero = -floor / range;
   const chartStyle = { "--chart-zero": `${zero * 100}%` } as CSSProperties;
@@ -184,12 +173,12 @@ export function MonthlyChart({ rows, accountItems }: {
               <li><span className="legend-swatch" aria-hidden="true" />実績</li>
               <li><span className="legend-swatch is-forecast" aria-hidden="true" />見込み</li>
             </ul>
-            {coloredAccounts.length > 0 && (
+            {itemColors.size > 0 && (
               <details className="chart-color-key">
                 <summary>勘定科目の色</summary>
                 <ul className="chart-legend">
-                  {coloredAccounts.map(([id, name]) => (
-                    <li key={id}><span className="legend-swatch" style={swatch(itemColors.get(id))} aria-hidden="true" />{name}</li>
+                  {[...itemColors].map(([id, { name, color }]) => (
+                    <li key={id}><span className="legend-swatch" style={swatch(color)} aria-hidden="true" />{name}</li>
                   ))}
                 </ul>
               </details>
@@ -296,7 +285,7 @@ export function MonthlyChart({ rows, accountItems }: {
   );
 }
 
-function TableBreakdown({ group, month, itemColors }: { group: ChartSeries; month: number; itemColors: Map<number, string> }) {
+function TableBreakdown({ group, month, itemColors }: { group: ChartSeries; month: number; itemColors: AccountItemColors }) {
   if (group.amount === null) return null;
   if (!group.items?.length) return <small className="chart-table-note">{seriesNote(group)}</small>;
   return (
