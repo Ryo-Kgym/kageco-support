@@ -1,4 +1,5 @@
 import "server-only";
+import type { TaxableSalesByRate } from "./forecast";
 
 export const FREEE_ISSUER = "https://accounts.secure.freee.co.jp";
 const ACCOUNTING_ORIGIN = "https://api.freee.co.jp";
@@ -20,6 +21,7 @@ export type FreeeAccountingMonth = {
   expenses: number | null;
   salesTax: number | null;
   deductiblePurchaseTax: number | null;
+  taxableSalesByRate?: TaxableSalesByRate | null;
   accountItems?: { sales: AccountItemAmount[]; expenses: AccountItemAmount[] };
 };
 
@@ -278,11 +280,44 @@ function accountRole(account?: AccountItem): "sales" | "expenses" | "other" | "u
   return groups.some((group) => balanceSheetCategories.has(group)) ? "other" : "unknown";
 }
 
+const outsideTax = /^(対象外|不課税|非課|非資|対外|[課非共]対輸本)/;
+const domesticSalesCategory = /^(?:課税売[上返一二ニ三四五六]|課売[上返][一二ニ三四五六])\s*(?:(5|8|10)\s*%(?:\s*(?:\(軽\)|軽))?)?$/;
+
+function updateTaxableSales(
+  month: FreeeAccountingMonth,
+  line: JournalLine,
+  direction: number,
+  name: string | undefined,
+  role: ReturnType<typeof accountRole>,
+  accounting: FreeeTaxSettings["accounting"],
+) {
+  const amounts = month.taxableSalesByRate;
+  if (!amounts || accounting === null) return;
+
+  // Bad debts and recoveries adjust VAT separately from sales and sales returns.
+  if (name && (outsideTax.test(name) || /^(?:[課非共]対(?:仕[入返]|輸税)|地消貨割|有価譲渡|(?:課税|輸出)売[倒回])/.test(name))) return;
+  if (!name && line.tax_code === null && role === "other" && (line.vat === null || line.vat === 0)) return;
+
+  const exportSale = name !== undefined && /^輸出売[上返]$/.test(name);
+  const rateSuffix = name?.match(domesticSalesCategory)?.[1];
+  // The legacy, unqualified general sales category is the old 5% code.
+  const rate = exportSale ? 0 : name === "課税売上" ? 5 : Number(rateSuffix);
+  const includedVat = accounting === "gross" && !exportSale ? line.vat : 0;
+  if (!Number.isFinite(rate) || includedVat === null || !Number.isSafeInteger(includedVat)) {
+    month.taxableSalesByRate = null;
+    return;
+  }
+
+  const amount = (amounts[rate] ?? 0) + (line.amount - includedVat) * direction;
+  if (Number.isSafeInteger(amount)) amounts[rate] = amount;
+  else month.taxableSalesByRate = null;
+}
+
 function updateTax(month: FreeeAccountingMonth, line: JournalLine, direction: number, name: string | undefined, method: number, role: ReturnType<typeof accountRole>) {
-  if (name && /^(対象外|不課税|非課|非資|対外|輸出|[課非共]対輸本)/.test(name)) return;
+  if (name && (outsideTax.test(name) || name.startsWith("輸出"))) return;
   const vat = typeof line.vat === "number" && Number.isSafeInteger(line.vat) ? line.vat : null;
 
-  if (name && /^課税売(上|返|倒|回)/.test(name)) {
+  if (name && (/^課税売[上返倒回]/.test(name) || domesticSalesCategory.test(name))) {
     if (month.salesTax !== null) {
       month.salesTax = vat === null ? null : month.salesTax + vat * direction;
     }
@@ -318,7 +353,7 @@ function accumulateLine(
   direction: number,
   accounts: Map<number, AccountItem>,
   taxNames: Map<number, string>,
-  taxMethod: number,
+  tax: { method: number; accounting: FreeeTaxSettings["accounting"] },
 ) {
   // The search API appends VAT lines for net accounting. VAT is already on each underlying detail line.
   if (line.line_type === "tax") return;
@@ -344,14 +379,15 @@ function accumulateLine(
     month.expenses = null;
   }
 
-  const taxName = line.tax_code === null ? undefined : taxNames.get(line.tax_code);
+  const taxName = line.tax_code === null ? undefined : taxNames.get(line.tax_code)?.normalize("NFKC").trim();
   if (account && /^仮[受払]消費税/.test(account.name)) {
     // Manually posted VAT adjustments require confirmation outside the line-level estimate.
     if (account.name.startsWith("仮受")) month.salesTax = null;
     else month.deductiblePurchaseTax = null;
     return;
   }
-  updateTax(month, line, direction, taxName, taxMethod, role);
+  updateTaxableSales(month, line, direction, taxName, role, tax.accounting);
+  updateTax(month, line, direction, taxName, tax.method, role);
 }
 
 function dateAt(year: number, month: number, day: number) {
@@ -408,11 +444,16 @@ export async function syncFreeeAccounting({ accessToken, companyId, year, throug
   }
   const accounts = new Map(accountResult.account_items.map((account) => [account.id, account]));
   const taxNames = new Map(taxResult.taxes.map((tax) => [tax.code, tax.name_ja]));
+  const taxSettings = getTaxSettings(fiscalYear);
+  const tax = { method: fiscalYear.tax_method, accounting: taxSettings.accounting };
   const months: FreeeAccountingMonth[] = [];
   for (let month = 1; month <= throughMonth; month += 1) {
     const start = dateAt(year, month, 1);
     const end = month === throughMonth ? throughDate ?? finalMonthEnd : dateAt(year, month, daysInMonth(year, month));
-    const totals: FreeeAccountingMonth = { month, sales: 0, expenses: 0, salesTax: 0, deductiblePurchaseTax: 0 };
+    const totals: FreeeAccountingMonth = {
+      month, sales: 0, expenses: 0, salesTax: 0, deductiblePurchaseTax: 0,
+      taxableSalesByRate: tax.accounting === null ? null : {},
+    };
     const itemTotals: AccountItemTotals = { sales: new Map(), expenses: new Map() };
     const journalsSeen = new Set<number>();
     const pageTokens = new Set<string>();
@@ -438,8 +479,8 @@ export async function syncFreeeAccounting({ accessToken, companyId, year, throug
         if (journalsSeen.has(journal.id)) continue;
         journalsSeen.add(journal.id);
         if (journal.approval_status === "in_progress") continue;
-        for (const line of journal.debit) accumulateLine(totals, itemTotals, line, -1, accounts, taxNames, fiscalYear.tax_method);
-        for (const line of journal.credit) accumulateLine(totals, itemTotals, line, 1, accounts, taxNames, fiscalYear.tax_method);
+        for (const line of journal.debit) accumulateLine(totals, itemTotals, line, -1, accounts, taxNames, tax);
+        for (const line of journal.credit) accumulateLine(totals, itemTotals, line, 1, accounts, taxNames, tax);
       }
       pageToken = page.next_page_token;
       if (pageToken !== null) {
@@ -457,5 +498,5 @@ export async function syncFreeeAccounting({ accessToken, companyId, year, throug
     months.push(totals);
   }
 
-  return { companyId, companyName: company.name, year, months, taxSettings: getTaxSettings(fiscalYear) };
+  return { companyId, companyName: company.name, year, months, taxSettings };
 }
