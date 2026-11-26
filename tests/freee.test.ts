@@ -99,6 +99,8 @@ const masters: Record<string, unknown> = {
     { id: 2, name: "業務売上", account_category: "Web制作", categories: ["損益", "収入金額", "Web制作"] },
     { id: 3, name: "雑費", account_category: "経費" },
     { id: 4, name: "備品", account_category: "有形固定資産" },
+    { id: 5, name: "保守売上", account_category: "売上高" },
+    { id: 6, name: "通信費", account_category: "経費" },
   ] },
   "/api/1/taxes/companies/123": { taxes: [
     { code: 2, name_ja: "対象外" },
@@ -128,6 +130,9 @@ test("syncs months through the cutoff, handles reversals, and counts recorded VA
   const refund = entry(14, [detail(2, 1_000, 130, 100)], [detail(1, 1_100, 2)]);
   const allocatedPurchase = entry(15, [detail(3, 300, 502, 30)], [detail(1, 330, 2)], "2026-02-10");
   const pendingSale = { ...entry(16, [detail(1, 110_000, 2)], [detail(2, 100_000, 129, 10_000)]), approval_status: "in_progress" };
+  const maintenanceSale = entry(17, [detail(1, 1_000, 2)], [detail(5, 1_000, 2)]);
+  const expenseRefund = entry(18, [detail(1, 500, 2)], [detail(6, 500, 2)]);
+  const unknownAccount = entry(19, [detail(7, 400, 2)], [detail(1, 400, 2)], "2026-04-10");
   const requests: Array<Record<string, string>> = [];
   const fetcher: typeof fetch = async (resource, init) => {
     const path = new URL(String(resource)).pathname;
@@ -140,22 +145,33 @@ test("syncs months through the cutoff, handles reversals, and counts recorded VA
     requests.push(query);
     if (query.start_issue_date === "2026-02-01") return Response.json({ data: [allocatedPurchase], next_page_token: null });
     if (query.start_issue_date === "2026-03-01") return Response.json({ data: [], next_page_token: null });
-    if (query.page_token === "next") return Response.json({ data: [sales, refund], next_page_token: null });
+    if (query.start_issue_date === "2026-04-01") return Response.json({ data: [unknownAccount], next_page_token: null });
+    if (query.page_token === "next") return Response.json({ data: [sales, refund, maintenanceSale, expenseRefund], next_page_token: null });
     return Response.json({ data: [sales, expense, transitionalPurchase, asset, pendingSale], next_page_token: "next" });
   };
   const result = await syncFreeeAccounting({
-    accessToken: "test-token", companyId: 123, year: 2026, throughMonth: 3, throughDate: "2026-03-18", fetcher,
+    accessToken: "test-token", companyId: 123, year: 2026, throughMonth: 4, throughDate: "2026-04-18", fetcher,
   });
   assert.equal(result.companyName, "テスト事業所");
   assert.deepEqual(result.taxSettings, { method: "general", accounting: "net", simpleBusinessCategory: 5 });
   assert.deepEqual(result.months, [
-    { month: 1, sales: 9_000, expenses: 12_200, salesTax: 900, deductiblePurchaseTax: 5_000 },
-    { month: 2, sales: 0, expenses: 300, salesTax: 0, deductiblePurchaseTax: null },
-    { month: 3, sales: 0, expenses: 0, salesTax: 0, deductiblePurchaseTax: 0 },
+    {
+      month: 1, sales: 10_000, expenses: 11_700, salesTax: 900, deductiblePurchaseTax: 5_000,
+      accountItems: {
+        sales: [{ id: 2, name: "業務売上", amount: 9_000 }, { id: 5, name: "保守売上", amount: 1_000 }],
+        expenses: [{ id: 3, name: "雑費", amount: 12_200 }, { id: 6, name: "通信費", amount: -500 }],
+      },
+    },
+    {
+      month: 2, sales: 0, expenses: 300, salesTax: 0, deductiblePurchaseTax: null,
+      accountItems: { sales: [], expenses: [{ id: 3, name: "雑費", amount: 300 }] },
+    },
+    { month: 3, sales: 0, expenses: 0, salesTax: 0, deductiblePurchaseTax: 0, accountItems: { sales: [], expenses: [] } },
+    { month: 4, sales: null, expenses: null, salesTax: 0, deductiblePurchaseTax: 0 },
   ]);
   assert.equal(requests[0].end_issue_date, "2026-01-31");
   assert.equal(requests[1].page_token, "next");
-  assert.equal(requests[3].end_issue_date, "2026-03-18");
+  assert.equal(requests[4].end_issue_date, "2026-04-18");
 });
 
 test("rejects a sync if freee never advances its continuation token", async () => {

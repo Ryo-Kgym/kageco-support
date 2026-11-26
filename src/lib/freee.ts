@@ -12,12 +12,15 @@ export type FreeeTokens = {
   companyId: number | null;
 };
 
+export type AccountItemAmount = { id: number; name: string; amount: number };
+
 export type FreeeAccountingMonth = {
   month: number;
   sales: number | null;
   expenses: number | null;
   salesTax: number | null;
   deductiblePurchaseTax: number | null;
+  accountItems?: { sales: AccountItemAmount[]; expenses: AccountItemAmount[] };
 };
 
 export type FreeeTaxSettings = {
@@ -67,6 +70,8 @@ type AccountItem = {
   account_category: string;
   categories?: string[];
 };
+
+type AccountItemTotals = Record<"sales" | "expenses", Map<number, AccountItemAmount>>;
 
 type JournalLine = {
   account_item_id: number;
@@ -308,6 +313,7 @@ function updateTax(month: FreeeAccountingMonth, line: JournalLine, direction: nu
 
 function accumulateLine(
   month: FreeeAccountingMonth,
+  itemTotals: AccountItemTotals,
   line: JournalLine,
   direction: number,
   accounts: Map<number, AccountItem>,
@@ -323,9 +329,17 @@ function accumulateLine(
 
   const account = accounts.get(line.account_item_id);
   const role = accountRole(account);
-  if (role === "sales" && month.sales !== null) month.sales += line.amount * direction;
-  if (role === "expenses" && month.expenses !== null) month.expenses -= line.amount * direction;
-  if (role === "unknown") {
+  if (account && (role === "sales" || role === "expenses")) {
+    const total = month[role];
+    if (total !== null) {
+      const amount = (role === "sales" ? direction : -direction) * line.amount;
+      month[role] = total + amount;
+      const items = itemTotals[role];
+      const item = items.get(account.id);
+      if (item) item.amount += amount;
+      else items.set(account.id, { id: account.id, name: account.name, amount });
+    }
+  } else if (role === "unknown") {
     month.sales = null;
     month.expenses = null;
   }
@@ -399,6 +413,7 @@ export async function syncFreeeAccounting({ accessToken, companyId, year, throug
     const start = dateAt(year, month, 1);
     const end = month === throughMonth ? throughDate ?? finalMonthEnd : dateAt(year, month, daysInMonth(year, month));
     const totals: FreeeAccountingMonth = { month, sales: 0, expenses: 0, salesTax: 0, deductiblePurchaseTax: 0 };
+    const itemTotals: AccountItemTotals = { sales: new Map(), expenses: new Map() };
     const journalsSeen = new Set<number>();
     const pageTokens = new Set<string>();
     let pageToken: string | null = null;
@@ -423,8 +438,8 @@ export async function syncFreeeAccounting({ accessToken, companyId, year, throug
         if (journalsSeen.has(journal.id)) continue;
         journalsSeen.add(journal.id);
         if (journal.approval_status === "in_progress") continue;
-        for (const line of journal.debit) accumulateLine(totals, line, -1, accounts, taxNames, fiscalYear.tax_method);
-        for (const line of journal.credit) accumulateLine(totals, line, 1, accounts, taxNames, fiscalYear.tax_method);
+        for (const line of journal.debit) accumulateLine(totals, itemTotals, line, -1, accounts, taxNames, fiscalYear.tax_method);
+        for (const line of journal.credit) accumulateLine(totals, itemTotals, line, 1, accounts, taxNames, fiscalYear.tax_method);
       }
       pageToken = page.next_page_token;
       if (pageToken !== null) {
@@ -433,6 +448,12 @@ export async function syncFreeeAccounting({ accessToken, companyId, year, throug
       }
     } while (pageToken !== null);
 
+    if (totals.sales !== null && totals.expenses !== null) {
+      totals.accountItems = {
+        sales: [...itemTotals.sales.values()].sort((a, b) => a.id - b.id),
+        expenses: [...itemTotals.expenses.values()].sort((a, b) => a.id - b.id),
+      };
+    }
     months.push(totals);
   }
 
