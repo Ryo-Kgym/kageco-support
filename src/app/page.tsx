@@ -1,4 +1,4 @@
-import { login, logout, savePlan, saveTax, setDemo } from "@/app/forecast-actions";
+import { login, logout, savePlan, saveTax, setDemo, setPlanMode } from "@/app/forecast-actions";
 import { startFreee, syncFreee } from "@/app/freee-actions";
 import { ForecastDashboard } from "@/components/forecast-dashboard";
 import { calculateForecast, FORECAST_YEAR } from "@/lib/forecast";
@@ -32,6 +32,9 @@ const notices: Record<string, string> = {
   "mode-changed": "表示が切り替わりました。現在の画面から入力し直してください。",
   "tax-saved": "年の前提を保存しました。",
   "plan-saved": "月ごとの見込みを保存しました。",
+  "plan-mode-trend": "推移モードに切り替えました。",
+  "plan-mode-manual": "手入力に切り替えました。",
+  "manual-plan-required": "見込みを保存するには手入力に切り替えてください。",
 };
 
 type Search = Promise<Record<string, string | string[] | undefined>>;
@@ -64,6 +67,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
   const forecast = calculateForecast({
     ...data,
     year: FORECAST_YEAR,
+    plans: data.monthlyPlanMode === "manual" ? data.plans : undefined,
     tax: data.consumptionMethodConfirmed ? data.tax : { ...data.tax, consumptionMethod: undefined },
   });
 
@@ -74,6 +78,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
       forecast={forecast}
       tax={data.tax}
       plans={data.plans}
+      monthlyPlanMode={data.monthlyPlanMode}
       lastClosedMonth={data.lastClosedMonth}
       maxClosedMonth={data.maxClosedMonth}
       lastClosedMonthSetting={data.lastClosedMonthSetting}
@@ -86,7 +91,15 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
       }}
       notice={message}
       canLogout={!localOpenAccess()}
-      actions={{ startFreee, sync: syncFreee, saveTax: saveTax.bind(null, mode), savePlan: savePlan.bind(null, mode), setDemo, logout }}
+      actions={{
+        startFreee,
+        sync: syncFreee,
+        saveTax: saveTax.bind(null, mode),
+        savePlan: savePlan.bind(null, mode),
+        setPlanMode: setPlanMode.bind(null, mode),
+        setDemo,
+        logout,
+      }}
     />
   );
 }
