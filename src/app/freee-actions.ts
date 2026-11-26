@@ -1,7 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, RedirectType } from "next/navigation";
 import { FORECAST_YEAR } from "@/lib/forecast";
 import { FREEE_ISSUER, FreeeApiError, exchangeFreeeCode, freeeAuthorizationUrl, getFreeeCompany, refreshFreeeTokens, revokeFreeeTokens, syncFreeeAccounting } from "@/lib/freee";
 import { activeTokens, beginSync, closeForecastSession, currentForecastDate, finishSync } from "@/lib/forecast-store";
@@ -10,6 +10,10 @@ import { authConfigured, beginFreeeLogin, clearFreeeSession, consumeFreeeLogin, 
 
 function returnHome(notice: string): never {
   redirect(`/?notice=${notice}#freee`);
+}
+
+function returnFromLogin(notice: string): never {
+  redirect(`/?notice=${notice}`, RedirectType.replace);
 }
 
 class FreeeSettingsRequiredError extends Error {}
@@ -28,13 +32,13 @@ export async function startFreee(_data: FormData) {
 
 export async function completeFreee(form: FormData) {
   const settings = freeeSettings();
-  if (!settings || !authConfigured()) returnHome("not-configured");
+  if (!settings || !authConfigured()) returnFromLogin("not-configured");
   const code = form.get("code");
   const state = form.get("state");
   const issuer = form.get("iss");
   if (typeof code !== "string" || !code || code.length > 4096 || typeof state !== "string"
-    || !/^[A-Za-z0-9_-]{43}$/.test(state) || (issuer && issuer !== FREEE_ISSUER)) returnHome("invalid-oauth");
-  if (!(await consumeFreeeLogin(state))) returnHome("invalid-oauth");
+    || !/^[A-Za-z0-9_-]{43}$/.test(state) || (issuer && issuer !== FREEE_ISSUER)) returnFromLogin("invalid-oauth");
+  if (!(await consumeFreeeLogin(state))) returnFromLogin("invalid-oauth");
 
   let outcome: string;
   try {
@@ -55,7 +59,7 @@ export async function completeFreee(form: FormData) {
   } catch {
     outcome = "connection-error";
   }
-  returnHome(outcome);
+  returnFromLogin(outcome);
 }
 
 export async function disconnectFreee(_data: FormData) {

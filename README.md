@@ -15,7 +15,7 @@ npm run dev
 
 1. freeeアプリストアで事業所に紐づくOAuthアプリを作成し、事業所、仕訳帳、勘定科目、税区分の参照権限を設定します。コールバックURLは `http://127.0.0.1:3000/freee/callback` です。
 2. `.env.example` を参考に、Gitの管理対象外の `.env.local` に `FREEE_CLIENT_ID`、`FREEE_CLIENT_SECRET`、`SESSION_SECRET` を設定します。`SESSION_SECRET` は `node -e 'console.log(require("node:crypto").randomBytes(32).toString("base64url"))'` で生成できます。
-3. 「freeeでログイン」を押し、freeeで対象の個人事業所を選んで参照を許可します。「ログインを完了」の後、「freeeから同期」を押します。
+3. 「freeeでログイン」を押し、freeeで対象の個人事業所を選んで参照を許可します。トップに戻ったら「freeeから同期」を押します。
 
 ログインと認可の情報は暗号化したCookieに保持します。別のブラウザや別のログインセッションから、取り込んだ実績や入力値は参照できません。
 
