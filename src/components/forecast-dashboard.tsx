@@ -12,9 +12,13 @@ type DashboardProps = {
   tax: TaxInputs;
   plans: MonthAmounts[];
   monthlyPlanMode: MonthlyPlanMode;
-  lastClosedMonth: number;
+  lastClosedSalesMonth: number;
+  lastClosedExpenseMonth: number;
+  defaultClosedMonth: number;
   maxClosedMonth: number;
   lastClosedMonthSetting: number | null;
+  lastClosedSalesMonthSetting: number | null;
+  lastClosedExpenseMonthSetting: number | null;
   connection: {
     configured: boolean;
     connected: boolean;
@@ -29,6 +33,7 @@ type DashboardProps = {
     startFreee: FormAction;
     disconnectFreee: FormAction;
     sync: FormAction;
+    saveClosedMonth: FormAction;
     saveTax: FormAction;
     savePlan: FormAction;
     setPlanMode: FormAction;
@@ -81,6 +86,10 @@ function closedPeriodCaption(monthCount: number) {
   return monthCount === 1 ? "1月の締め済み実績" : `1月〜${monthCount}月の締め済み実績`;
 }
 
+function closedMonthLabel(month: number) {
+  return month === 0 ? "締め済み月なし" : `${month}月まで`;
+}
+
 type AccountBreakdown = ReturnType<typeof summarizeAccountItems>["sales"];
 
 function AccountBreakdownList({ breakdown, itemColors, needsSync }: {
@@ -126,10 +135,16 @@ function ActualSummary({ forecast, accountItems, itemColors, needsSync }: Pick<D
   needsSync: boolean;
 }) {
   const closedMonths = forecast.months.filter(({ closed }) => closed);
-  const sales = closedActualAmount(closedMonths, "sales");
-  const expenses = closedActualAmount(closedMonths, "expenses");
-  const profit = sales === null || expenses === null ? null : sales - expenses;
-  const breakdown = summarizeAccountItems(closedMonths, accountItems);
+  const salesMonths = forecast.months.filter(({ closedByAmount }) => closedByAmount.sales);
+  const expenseMonths = forecast.months.filter(({ closedByAmount }) => closedByAmount.expenses);
+  const samePeriod = salesMonths.length === expenseMonths.length;
+  const sales = closedActualAmount(salesMonths, "sales");
+  const expenses = closedActualAmount(expenseMonths, "expenses");
+  const incomeSales = closedMonths.length === salesMonths.length ? sales : closedActualAmount(closedMonths, "sales");
+  const incomeExpenses = closedMonths.length === expenseMonths.length ? expenses : closedActualAmount(closedMonths, "expenses");
+  const profit = incomeSales === null || incomeExpenses === null ? null : incomeSales - incomeExpenses;
+  const salesPeriodBreakdown = summarizeAccountItems(salesMonths, accountItems);
+  const expenseBreakdown = samePeriod ? salesPeriodBreakdown.expenses : summarizeAccountItems(expenseMonths, accountItems).expenses;
   const actualYen = (amount: number | null) => amount === null ? "未集計" : yen(amount);
 
   return (
@@ -137,22 +152,25 @@ function ActualSummary({ forecast, accountItems, itemColors, needsSync }: Pick<D
       <div className="section-heading">
         <div className="section-title">
           <h2 id="actual-summary-heading">締め済みの実績</h2>
-          <p>{closedPeriodCaption(closedMonths.length)}</p>
+          {samePeriod && <p>{closedPeriodCaption(closedMonths.length)}</p>}
         </div>
       </div>
       <div className="financial-grid">
-        <MetricCard title="事業売上" amount={sales} unavailableLabel="未集計">
-          <AccountBreakdownList breakdown={breakdown.sales} itemColors={itemColors} needsSync={needsSync} />
+        <MetricCard title="事業売上" amount={sales} unavailableLabel="未集計"
+          caption={samePeriod ? undefined : closedPeriodCaption(salesMonths.length)}>
+          <AccountBreakdownList breakdown={salesPeriodBreakdown.sales} itemColors={itemColors} needsSync={needsSync} />
         </MetricCard>
-        <MetricCard title="支出（事業経費）" amount={expenses} unavailableLabel="未集計">
-          <AccountBreakdownList breakdown={breakdown.expenses} itemColors={itemColors} needsSync={needsSync} />
+        <MetricCard title="支出（事業経費）" amount={expenses} unavailableLabel="未集計"
+          caption={samePeriod ? undefined : closedPeriodCaption(expenseMonths.length)}>
+          <AccountBreakdownList breakdown={expenseBreakdown} itemColors={itemColors} needsSync={needsSync} />
         </MetricCard>
         <MetricCard className="income-card" title="所得（実績）" amount={profit}
           caption="締め済み月の事業所得（青色申告特別控除前）" unavailableLabel="未集計">
           <CalculationSteps steps={[{
             label: "事業所得の計算式",
-            expression: `事業売上 ${actualYen(sales)} − 事業経費 ${actualYen(expenses)} ＝ ${actualYen(profit)}`,
+            expression: `事業売上 ${actualYen(incomeSales)} − 事業経費 ${actualYen(incomeExpenses)} ＝ ${actualYen(profit)}`,
           }]} />
+          {!samePeriod && <p className="metric-caption">所得は売上・支出がともに締め済みの期間で計算します（{closedPeriodCaption(closedMonths.length)}）。</p>}
           <p className="metric-caption">年額で入力した給与・賞与と青色申告特別控除は、年末の見込みに反映します。</p>
         </MetricCard>
       </div>
@@ -208,6 +226,57 @@ function CalculationSteps({ steps }: { steps: CalculationStep[] }) {
         <div key={label}><dt>{label}</dt><dd>{expression}</dd></div>
       ))}
     </dl>
+  );
+}
+
+function ForecastAmountCalculation({ forecast, amountKey }: Pick<DashboardProps, "forecast"> & { amountKey: "sales" | "expenses" }) {
+  const closed = forecast.months.filter(({ closedByAmount }) => closedByAmount[amountKey]);
+  const remaining = forecast.months.filter(({ closedByAmount }) => !closedByAmount[amountKey]);
+  const lastClosedMonth = closed.at(-1)?.month ?? 0;
+  const actualTotal = closed.length ? closedActualAmount(closed, amountKey) : 0;
+  const missingActuals = closed.filter(({ actual }) => actual[amountKey] === null);
+  const steps = [{
+    label: closed.length ? `${closedPeriodCaption(lastClosedMonth)}（freee）` : "締め済み実績（freee）",
+    expression: actualTotal === null ? `未集計（${missingActuals.map(({ month }) => `${month}月`).join("・")}）`
+      : closed.length ? yen(actualTotal) : "0円（締め済み月なし）",
+  }];
+
+  const { method, amount, included } = forecast.trend[amountKey];
+  const usesTrend = remaining.some(({ sources }) => sources[amountKey] === "average");
+  if (usesTrend && method !== "unavailable") {
+    const operands = included.map(({ month, amount: actual }) => `${month}月 ${yen(actual)}`).join(" ＋ ");
+    const expression = included.length > 1 ? `（${operands}） ÷ ${included.length} → ${yen(amount)}` : operands;
+    steps.push({
+      label: included.length > 1 ? "締め月までの月平均（1円単位に丸め）" : "締め月までの月平均",
+      expression,
+    });
+  } else if (method === "unavailable" && remaining.some(({ sources }) => sources[amountKey] === "missing")) {
+    steps.push({ label: "見込みの基準額", expression: "未算出（利用できる締め済み実績なし）" });
+  }
+
+  for (const { month, forecast: amounts, sources } of remaining) {
+    const source = sources[amountKey];
+    const sourceLabel = source === "average" ? "（月平均）" : source === "plan" ? "（手入力）" : "";
+    steps.push({ label: `${month}月の見込み${sourceLabel}`, expression: yen(amounts[amountKey]) });
+  }
+
+  const remainingTotal = remaining.reduce<number | null>((total, row) => {
+    const amount = row.forecast[amountKey];
+    return total === null || amount === null ? null : total + amount;
+  }, 0);
+  const actualTerm = `${yen(actualTotal)}（締め済み実績）`;
+  const terms = remaining.length ? `${actualTerm} ＋ ${yen(remainingTotal)}（未締め月の見込み）` : actualTerm;
+  const annualTotal = forecast[amountKey];
+  steps.push({
+    label: "年末の見込み",
+    expression: `${terms} ${annualTotal === null ? "→" : "＝"} ${yen(annualTotal)}`,
+  });
+
+  return (
+    <details className="forecast-calculation" suppressHydrationWarning>
+      <summary>見込みの計算式</summary>
+      <CalculationSteps steps={steps} />
+    </details>
   );
 }
 
@@ -459,7 +528,8 @@ function ConsumptionTaxCard({ forecast }: Pick<DashboardProps, "forecast">) {
   );
 }
 
-function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<DashboardProps, "connection" | "lastClosedMonth" | "actions">) {
+function ConnectionPanel({ connection, lastClosedSalesMonth, lastClosedExpenseMonth, actions }: Pick<DashboardProps,
+  "connection" | "lastClosedSalesMonth" | "lastClosedExpenseMonth" | "actions">) {
   const { connected, configured, syncedAt, canSync } = connection;
   const connectionLabel = connected ? "接続済み" : "未接続";
   const syncTime = syncedAt ? timeFormat.format(new Date(syncedAt)) : "未同期";
@@ -476,7 +546,14 @@ function ConnectionPanel({ connection, lastClosedMonth, actions }: Pick<Dashboar
       <dl className="connection-meta">
         <div><dt>事業所</dt><dd>{connection.companyName ?? "未選択"}</dd></div>
         <div><dt>最終同期</dt><dd>{syncTime}</dd></div>
-        <div><dt>締め済み実績</dt><dd>{lastClosedMonth === 0 ? "未指定" : `${lastClosedMonth}月まで`}</dd></div>
+        {lastClosedSalesMonth === lastClosedExpenseMonth ? (
+          <div><dt>締め済み実績</dt><dd>{closedMonthLabel(lastClosedSalesMonth)}</dd></div>
+        ) : (
+          <>
+            <div><dt>売上の締め月</dt><dd>{closedMonthLabel(lastClosedSalesMonth)}</dd></div>
+            <div><dt>支出の締め月</dt><dd>{closedMonthLabel(lastClosedExpenseMonth)}</dd></div>
+          </>
+        )}
       </dl>
       {(connected || configured) && (
         <div className="connection-actions">
@@ -528,10 +605,27 @@ function AmountField({ name, label, value, signed = false }: {
   );
 }
 
-function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
-  tax: TaxInputs;
-  lastClosedMonthSetting: number | null;
+function ClosedMonthField({ name, label, value, fallbackLabel, maxClosedMonth }: {
+  name: string;
+  label: string;
+  value: number | null;
+  fallbackLabel: string;
   maxClosedMonth: number;
+}) {
+  return (
+    <label className="form-field">
+      <span>{label}</span>
+      <select name={name} defaultValue={value ?? ""}>
+        <option value="">{fallbackLabel}</option>
+        <option value={0}>締め済みの月なし</option>
+        {months.slice(0, maxClosedMonth).map((month) => <option key={month} value={month}>{month}月</option>)}
+      </select>
+    </label>
+  );
+}
+
+function TaxForm({ tax, lastClosedSalesMonthSetting, lastClosedExpenseMonthSetting, maxClosedMonth, action }:
+  Pick<DashboardProps, "tax" | "lastClosedSalesMonthSetting" | "lastClosedExpenseMonthSetting" | "maxClosedMonth"> & {
   action: FormAction;
 }) {
   return (
@@ -595,15 +689,12 @@ function TaxForm({ tax, lastClosedMonthSetting, maxClosedMonth, action }: {
             <fieldset className="form-group">
               <legend>集計期間</legend>
               <div className="field-grid">
-                <label className="form-field">
-                  <span>締め済みの最終月</span>
-                  <select name="lastClosedMonth" defaultValue={lastClosedMonthSetting ?? ""}>
-                    <option value="">自動（同期済みの最終月）</option>
-                    <option value={0}>締め済みの月なし</option>
-                    {months.slice(0, maxClosedMonth).map((month) => <option key={month} value={month}>{month}月</option>)}
-                  </select>
-                </label>
+                <ClosedMonthField name="lastClosedSalesMonth" label="売上の締め済み最終月" value={lastClosedSalesMonthSetting}
+                  fallbackLabel="共通の設定に従う" maxClosedMonth={maxClosedMonth} />
+                <ClosedMonthField name="lastClosedExpenseMonth" label="支出の締め済み最終月" value={lastClosedExpenseMonthSetting}
+                  fallbackLabel="共通の設定に従う" maxClosedMonth={maxClosedMonth} />
               </div>
+              <p className="form-hint">売上と経費で締め月が異なる場合に設定します。</p>
             </fieldset>
             <fieldset className="form-group">
               <legend>所得税の控除と精算</legend>
@@ -647,8 +738,8 @@ function MonthlyPlans({ plans, monthlyPlanMode, forecast, actions }: Pick<Dashbo
         <p>{remainingMonths.length === 0
           ? "すべての月が締め済みです。"
           : trend
-            ? "締め済みの実績から、直近最大3か月の平均で見積もります。"
-            : "月ごとの着地額を入力します。空欄の項目は推移から見積もります。"}</p>
+            ? "売上と経費それぞれについて、1月から締め月までの集計できた実績を平均します。"
+            : "月ごとの着地額を入力します。空欄の項目は締め月までの月平均で見積もります。"}</p>
       </header>
       {remainingMonths.length > 0 && (
         <>
@@ -667,11 +758,11 @@ function MonthlyPlans({ plans, monthlyPlanMode, forecast, actions }: Pick<Dashbo
                   </tr>
                 </thead>
                 <tbody>
-                  {remainingMonths.map(({ month, forecast: amounts }) => (
+                  {remainingMonths.map(({ month, closedByAmount, forecast: amounts }) => (
                     <tr key={month}>
                       <th scope="row">{month}月</th>
-                      <td className="numeric-cell">{yen(amounts.sales)}</td>
-                      <td className="numeric-cell">{yen(amounts.expenses)}</td>
+                      <td className="numeric-cell">{closedByAmount.sales ? "締め済み" : yen(amounts.sales)}</td>
+                      <td className="numeric-cell">{closedByAmount.expenses ? "締め済み" : yen(amounts.expenses)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -679,18 +770,24 @@ function MonthlyPlans({ plans, monthlyPlanMode, forecast, actions }: Pick<Dashbo
             </div>
           ) : (
             <div className="plan-list">
-              {remainingMonths.map(({ month }) => {
+              {remainingMonths.map(({ month, closedByAmount }) => {
                 const plan = plans.find((entry) => entry.month === month);
+                const salesOpen = !closedByAmount.sales;
+                const expensesOpen = !closedByAmount.expenses;
+                const hasPlan = (salesOpen && (plan?.sales != null || plan?.salesTax != null))
+                  || (expensesOpen && (plan?.expenses != null || plan?.deductiblePurchaseTax != null));
                 return (
                   <details className="plan-edit" key={month}>
-                    <summary>{month}月{plan && <span className="plan-state">入力済み</span>}</summary>
+                    <summary>{month}月{hasPlan && <span className="plan-state">入力済み</span>}</summary>
                     <form action={actions.savePlan} className="editable-form" aria-label={`${month}月の見込みを編集`}>
                       <input type="hidden" name="month" value={month} />
+                      {!salesOpen && <p className="form-hint">事業売上は締め済みです。</p>}
+                      {!expensesOpen && <p className="form-hint">事業経費は締め済みです。</p>}
                       <div className="field-grid">
-                        <AmountField name="sales" label="事業売上" value={plan?.sales} signed />
-                        <AmountField name="expenses" label="事業経費" value={plan?.expenses} signed />
-                        <AmountField name="salesTax" label="売上に係る消費税" value={plan?.salesTax} signed />
-                        <AmountField name="deductiblePurchaseTax" label="控除対象の仕入税額" value={plan?.deductiblePurchaseTax} signed />
+                        {salesOpen && <AmountField name="sales" label="事業売上" value={plan?.sales} signed />}
+                        {expensesOpen && <AmountField name="expenses" label="事業経費" value={plan?.expenses} signed />}
+                        {salesOpen && <AmountField name="salesTax" label="売上に係る消費税" value={plan?.salesTax} signed />}
+                        {expensesOpen && <AmountField name="deductiblePurchaseTax" label="控除対象の仕入税額" value={plan?.deductiblePurchaseTax} signed />}
                       </div>
                       <div className="form-footer"><button className="dashboard-button secondary" type="submit">{month}月の見込みを保存</button></div>
                     </form>
@@ -706,11 +803,15 @@ function MonthlyPlans({ plans, monthlyPlanMode, forecast, actions }: Pick<Dashbo
 }
 
 export function ForecastDashboard({
-  year, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedMonth, maxClosedMonth, lastClosedMonthSetting, connection, notice, actions,
+  year, forecast, accountItems, tax, plans, monthlyPlanMode, lastClosedSalesMonth, lastClosedExpenseMonth, defaultClosedMonth, maxClosedMonth,
+  lastClosedMonthSetting, lastClosedSalesMonthSetting, lastClosedExpenseMonthSetting, connection, notice, actions,
 }: DashboardProps) {
   const itemColors = getAccountItemColors(accountItems);
   const forecastBreakdown = summarizeAccountItems(forecast.months, accountItems);
   const needsSync = connection.accountItemsNeedSync;
+  const individualCutoffs = lastClosedSalesMonthSetting !== null || lastClosedExpenseMonthSetting !== null;
+  const defaultCutoffLabel = defaultClosedMonth === 12 ? "自動（12月まで）"
+    : defaultClosedMonth === 0 ? "自動（締め済み月なし）" : `自動・前月（${defaultClosedMonth}月）`;
   return (
     <div className="dashboard-shell">
       <header className="dashboard-topbar">
@@ -733,18 +834,30 @@ export function ForecastDashboard({
         {notice && <p className="dashboard-notice" role="status">{notice}</p>}
         <ActualSummary forecast={forecast} accountItems={accountItems} itemColors={itemColors} needsSync={needsSync} />
         <section id="summary" aria-labelledby="summary-heading">
-          <div className="section-heading">
+          <div className="section-heading forecast-heading">
             <div className="section-title">
               <h2 id="summary-heading">年末の見込み</h2>
-              <p>締め済みの実績と未締め月の見込みから試算</p>
+              <p>締め月までの月平均で、翌月以降の売上と経費を見積もります。</p>
               <p>住民税は{year}年の所得をもとに、{year + 1}年1月1日時点で大分県別府市に住所がある場合を試算します。所得税と消費税には全国共通の税率を使います。</p>
             </div>
+            <form action={actions.saveClosedMonth} className="forecast-cutoff">
+              <div className="forecast-cutoff-controls">
+                <ClosedMonthField name="lastClosedMonth" label="締め済み最終月" value={lastClosedMonthSetting}
+                  fallbackLabel={defaultCutoffLabel} maxClosedMonth={defaultClosedMonth} />
+                <button className="dashboard-button" type="submit">反映</button>
+              </div>
+              {individualCutoffs && (
+                <p>個別設定を適用中（売上は{closedMonthLabel(lastClosedSalesMonth)}、経費は{closedMonthLabel(lastClosedExpenseMonth)}）。反映すると、選択した月が共通の締め月になります。</p>
+              )}
+            </form>
           </div>
           <div className="financial-grid">
-            <MetricCard title="事業売上" amount={forecast.sales}>
+            <MetricCard title="事業売上" amount={forecast.sales}
+              footer={<ForecastAmountCalculation forecast={forecast} amountKey="sales" />}>
               <AccountBreakdownList breakdown={forecastBreakdown.sales} itemColors={itemColors} needsSync={needsSync} />
             </MetricCard>
-            <MetricCard title="支出（事業経費）" amount={forecast.expenses}>
+            <MetricCard title="支出（事業経費）" amount={forecast.expenses}
+              footer={<ForecastAmountCalculation forecast={forecast} amountKey="expenses" />}>
               <AccountBreakdownList breakdown={forecastBreakdown.expenses} itemColors={itemColors} needsSync={needsSync} />
             </MetricCard>
             <IncomeForecastCard forecast={forecast} />
@@ -757,12 +870,14 @@ export function ForecastDashboard({
         </section>
         <div className="dashboard-overview">
           <MonthlyChart rows={forecast.months} accountItems={accountItems} itemColors={itemColors} />
-          <ConnectionPanel connection={connection} lastClosedMonth={lastClosedMonth} actions={actions} />
+          <ConnectionPanel connection={connection} lastClosedSalesMonth={lastClosedSalesMonth} lastClosedExpenseMonth={lastClosedExpenseMonth}
+            actions={actions} />
         </div>
         <section id="settings" className="dashboard-settings" aria-labelledby="settings-heading">
           <div className="section-heading"><h2 id="settings-heading">予測の前提</h2></div>
           <div className="settings-grid">
-            <TaxForm tax={tax} lastClosedMonthSetting={lastClosedMonthSetting} maxClosedMonth={maxClosedMonth} action={actions.saveTax} />
+            <TaxForm tax={tax} lastClosedSalesMonthSetting={lastClosedSalesMonthSetting}
+              lastClosedExpenseMonthSetting={lastClosedExpenseMonthSetting} maxClosedMonth={maxClosedMonth} action={actions.saveTax} />
             <MonthlyPlans plans={plans} monthlyPlanMode={monthlyPlanMode} forecast={forecast} actions={actions} />
           </div>
         </section>

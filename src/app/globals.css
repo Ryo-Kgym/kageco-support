@@ -221,6 +221,29 @@ a {
   gap: 4px;
 }
 
+.forecast-heading {
+  align-items: start;
+}
+
+.forecast-heading .section-title {
+  flex: 1 1 26rem;
+  min-width: 0;
+}
+
+.forecast-cutoff {
+  display: grid;
+  gap: 5px;
+  width: min(100%, 18rem);
+  margin-inline-start: auto;
+}
+
+.forecast-cutoff-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
 .section-heading h2,
 .panel-heading h2 {
   margin: 0;
@@ -306,6 +329,7 @@ a {
 }
 
 .financial-grid:has(.account-breakdown-more[open]),
+.financial-grid:has(.forecast-calculation[open]),
 .metrics-grid:has(.tax-calculation[open]) {
   align-items: start;
 }
@@ -404,13 +428,15 @@ a {
   font-weight: 700;
 }
 
-.tax-calculation {
+.tax-calculation,
+.forecast-calculation {
   border-top: 1px solid var(--line-subtle);
   font-size: .875rem;
   overflow-wrap: anywhere;
 }
 
-.tax-calculation summary {
+.tax-calculation summary,
+.forecast-calculation summary {
   min-height: 44px;
   padding-block: 11px;
   color: var(--forest);
@@ -1176,6 +1202,15 @@ a {
 }
 
 @media (max-width: 640px) {
+  .forecast-heading .section-title {
+    flex-basis: 100%;
+  }
+
+  .forecast-cutoff {
+    width: 100%;
+    margin-inline-start: 0;
+  }
+
   .financial-grid,
   .metrics-grid {
     grid-template-columns: minmax(0, 1fr);
