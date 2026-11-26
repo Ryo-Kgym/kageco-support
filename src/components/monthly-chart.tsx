@@ -184,7 +184,7 @@ export function MonthlyChart({ rows, accountItems, itemColors }: {
               </details>
             )}
           </div>
-          <p className="chart-hint">月にカーソルを合わせるか選択すると、内訳を確認できます。</p>
+          <p className="chart-hint">月にカーソルを合わせるか選択すると、内訳を確認できます。<span className="chart-scroll-hint">横にスクロールできます。</span></p>
           <div
             className="chart-frame"
             ref={chartFrame}
